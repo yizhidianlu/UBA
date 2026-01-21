@@ -1,6 +1,0 @@
-Starting test script...
-Import successful.
-Analyzer initialized.
-SUCCESS: scan_opportunities found.
-Running scan...
-Scan returned 1 results.
