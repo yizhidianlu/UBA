@@ -9,6 +9,10 @@ from src.ui import (
     render_main_header, render_metric_card, render_alert, render_footer
 )
 
+# Import database modules
+from src.database import init_db, get_session
+from src.database.models import Asset, Signal, SignalStatus, PortfolioPosition, VisitLog
+
 st.set_page_config(
     page_title=f"{APP_NAME_CN} | {APP_NAME_EN}",
     page_icon="🛡️",
@@ -20,11 +24,7 @@ st.set_page_config(
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 
 # Initialize database on first run
-from src.database import init_db
 init_db()
-
-# Track visit count
-from src.database.models import VisitLog
 
 def get_today_visits(db_session) -> int:
     """Get and increment today's visit count."""
@@ -40,10 +40,6 @@ def get_today_visits(db_session) -> int:
 
 # Render main header
 st.markdown(render_main_header(), unsafe_allow_html=True)
-
-# Quick stats with real-time data
-from src.database import get_session
-from src.database.models import Asset, Signal, SignalStatus, PortfolioPosition
 from src.services import RealtimeService
 
 session = get_session()
