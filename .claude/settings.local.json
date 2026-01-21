@@ -18,7 +18,9 @@
       "Bash(where:*)",
       "Bash(\"D:/Application/Miniconda3/envs/UBA_CC/python.exe\" \"C:/Users/jielu/Desktop/Software/UBA/test_imports.py\")",
       "Bash(\"D:/Application/Miniconda3/envs/UBA_CC/python.exe\" \"C:/Users/jielu/Desktop/Software/UBA/test_screener.py\")",
-      "Bash(\"D:/Application/Miniconda3/envs/UBA_CC/python.exe\":*)"
+      "Bash(\"D:/Application/Miniconda3/envs/UBA_CC/python.exe\":*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
     ]
   }
 }

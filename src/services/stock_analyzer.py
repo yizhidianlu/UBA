@@ -351,4 +351,57 @@ class StockAnalyzer:
         result['success'] = True
         return result
 
+    def search_stock_by_name(self, keyword: str, limit: int = 10) -> List[StockInfo]:
+        """
+        根据股票名称或代码关键词搜索股票
+
+        Args:
+            keyword: 搜索关键词（股票名称或代码）
+            limit: 返回结果数量限制
+
+        Returns:
+            匹配的股票列表
+        """
+        results = []
+
+        try:
+            # 使用东方财富搜索接口
+            url = 'https://searchapi.eastmoney.com/api/suggest/get'
+            params = {
+                'input': keyword,
+                'type': '14',
+                'token': 'D43BF722C8E33BDC906FB84D85E326E8',
+                'count': str(limit)
+            }
+
+            resp = self.session.get(url, params=params, timeout=10)
+            data = resp.json()
+
+            if data.get('QuotationCodeTable', {}).get('Data'):
+                for item in data['QuotationCodeTable']['Data']:
+                    code = item.get('Code', '')
+                    name = item.get('Name', '')
+                    market_code = item.get('MktNum', '')
+
+                    # 只处理A股
+                    if market_code in ['0', '1']:
+                        if market_code == '1':
+                            full_code = f"{code}.SH"
+                            market = "A股"
+                        else:
+                            full_code = f"{code}.SZ"
+                            market = "A股"
+
+                        results.append(StockInfo(
+                            code=full_code,
+                            name=name,
+                            industry="",  # 搜索接口不返回行业
+                            market=market
+                        ))
+
+        except Exception as e:
+            print(f"搜索股票失败: {e}")
+
+        return results[:limit]
+
 

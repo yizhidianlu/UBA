@@ -40,32 +40,81 @@ analyzer = get_analyzer()
 # Session state
 if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = None
+if 'search_results' not in st.session_state:
+    st.session_state.search_results = None
 
 # ==================== Add New Stock Section ====================
 st.markdown("### ➕ 添加新股票")
 
-col1, col2 = st.columns([3, 1])
+tab_code, tab_name = st.tabs(["按代码添加", "按名称搜索"])
 
-with col1:
-    input_code = st.text_input(
-        "股票代码",
-        placeholder="输入股票代码，如 600519 或 000858",
-        help="支持格式：纯数字(600519)、带后缀(600519.SH)"
-    )
+with tab_code:
+    col1, col2 = st.columns([3, 1])
 
-with col2:
-    st.write("")
-    st.write("")
-    analyze_btn = st.button("🔍 分析股票", type="primary", use_container_width=True)
+    with col1:
+        input_code = st.text_input(
+            "股票代码",
+            placeholder="输入股票代码，如 600519 或 000858",
+            help="支持格式：纯数字(600519)、带后缀(600519.SH)",
+            key="code_input"
+        )
 
-if analyze_btn and input_code:
-    with st.spinner("正在分析股票数据，请稍候..."):
-        try:
-            result = analyzer.full_analysis(input_code)
-            st.session_state.analysis_result = result
-        except Exception as e:
-            st.error(f"分析失败: {e}")
-            st.session_state.analysis_result = None
+    with col2:
+        st.write("")
+        st.write("")
+        analyze_btn = st.button("🔍 分析股票", type="primary", use_container_width=True, key="analyze_code")
+
+    if analyze_btn and input_code:
+        with st.spinner("正在分析股票数据，请稍候..."):
+            try:
+                result = analyzer.full_analysis(input_code)
+                st.session_state.analysis_result = result
+            except Exception as e:
+                st.error(f"分析失败: {e}")
+                st.session_state.analysis_result = None
+
+with tab_name:
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        search_name = st.text_input(
+            "股票名称",
+            placeholder="输入股票名称关键词，如 茅台、平安、招商",
+            help="支持模糊搜索，输入部分名称即可",
+            key="name_input"
+        )
+
+    with col2:
+        st.write("")
+        st.write("")
+        search_btn = st.button("🔍 搜索股票", type="primary", use_container_width=True, key="search_name")
+
+    if search_btn and search_name:
+        with st.spinner("正在搜索..."):
+            try:
+                results = analyzer.search_stock_by_name(search_name, limit=10)
+                st.session_state.search_results = results
+            except Exception as e:
+                st.error(f"搜索失败: {e}")
+                st.session_state.search_results = None
+
+    # Display search results
+    if st.session_state.search_results:
+        st.markdown("**搜索结果：**")
+        for idx, stock in enumerate(st.session_state.search_results):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"**{stock.name}** ({stock.code})")
+            with col2:
+                if st.button(f"分析", key=f"analyze_search_{idx}", use_container_width=True):
+                    with st.spinner(f"正在分析 {stock.name}..."):
+                        try:
+                            result = analyzer.full_analysis(stock.code)
+                            st.session_state.analysis_result = result
+                            st.session_state.search_results = None
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"分析失败: {e}")
 
 # Display analysis results
 if st.session_state.analysis_result:

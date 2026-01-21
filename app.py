@@ -1,5 +1,6 @@
 """Main Streamlit application entry point for UBA (Unbeaten Area) - 不败之地."""
 import streamlit as st
+import textwrap
 from datetime import datetime
 
 # Import UI styles
@@ -140,7 +141,7 @@ st.markdown("### 🚀 快速导航")
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="metric-card">
         <h4>📋 股票池</h4>
         <ul style="color: #666; margin: 0; padding-left: 1.2rem;">
@@ -149,10 +150,10 @@ with col1:
             <li>自动分析推荐</li>
         </ul>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 with col2:
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="metric-card">
         <h4>📊 仪表盘</h4>
         <ul style="color: #666; margin: 0; padding-left: 1.2rem;">
@@ -161,10 +162,10 @@ with col2:
             <li>信号状态一览</li>
         </ul>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 with col3:
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="metric-card">
         <h4>🎯 智能选股</h4>
         <ul style="color: #666; margin: 0; padding-left: 1.2rem;">
@@ -173,14 +174,14 @@ with col3:
             <li>批量加入股票池</li>
         </ul>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="metric-card">
         <h4>🔔 信号中心</h4>
         <ul style="color: #666; margin: 0; padding-left: 1.2rem;">
@@ -189,10 +190,10 @@ with col1:
             <li>记录交易日志</li>
         </ul>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 with col2:
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="metric-card">
         <h4>💼 持仓管理</h4>
         <ul style="color: #666; margin: 0; padding-left: 1.2rem;">
@@ -201,19 +202,19 @@ with col2:
             <li>风险控制</li>
         </ul>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 with col3:
-    st.markdown("""
+    st.markdown(textwrap.dedent("""
     <div class="metric-card">
-        <h4>🤖 AI 分析</h4>
+        <h4>🧠 AI 分析</h4>
         <ul style="color: #666; margin: 0; padding-left: 1.2rem;">
             <li>智能投资建议</li>
             <li>基本面分析</li>
             <li>估值诊断</li>
         </ul>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
 st.info("👈 使用左侧导航栏进入各功能模块")
@@ -223,13 +224,13 @@ st.markdown(render_footer(), unsafe_allow_html=True)
 
 # Sidebar branding
 with st.sidebar:
-    st.markdown(f"""
+    st.markdown(textwrap.dedent(f"""
     <div style="text-align: center; padding: 1rem 0;">
         <div style="font-size: 2.5rem;">🛡️</div>
         <div style="font-size: 1.2rem; font-weight: 700; color: #1E88E5;">{APP_NAME_CN}</div>
         <div style="font-size: 0.8rem; color: #666;">{APP_NAME_EN} • {APP_FULL_NAME}</div>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
     st.divider()
 

@@ -1,4 +1,5 @@
 """Global UI styles and theme configuration for UBA (Unbeaten Area)."""
+import textwrap
 
 # App Branding
 APP_NAME_CN = "不败之地"
@@ -321,7 +322,7 @@ def get_page_config(title: str, icon: str = "📊"):
 def render_header(title: str, subtitle: str = None, icon: str = "📊"):
     """Render a styled page header."""
     subtitle_html = f'<p>{subtitle}</p>' if subtitle else ''
-    return f"""
+    return textwrap.dedent(f"""
     <div class="main-header">
         <div class="brand-container">
             <span class="brand-logo">{icon}</span>
@@ -332,12 +333,12 @@ def render_header(title: str, subtitle: str = None, icon: str = "📊"):
         </div>
         {subtitle_html}
     </div>
-    """
+    """)
 
 
 def render_main_header():
     """Render the main app header with full branding."""
-    return f"""
+    return textwrap.dedent(f"""
     <div class="main-header">
         <div class="brand-container">
             <span class="brand-logo">🛡️</span>
@@ -348,24 +349,13 @@ def render_main_header():
         </div>
         <p>{APP_SLOGAN}</p>
     </div>
-    """
+    """)
 
 
 def render_metric_card(value: str, label: str, icon: str = "", delta: str = None):
     """Render a styled metric card."""
     delta_html = f'<div style="font-size: 0.85rem; color: {"#4CAF50" if delta and delta.startswith("+") else "#F44336"}">{delta}</div>' if delta else ''
-    return f"""
-    <div class="metric-card">
-        <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 1.5rem;">{icon}</span>
-            <div>
-                <div class="metric-value">{value}</div>
-                <div class="metric-label">{label}</div>
-                {delta_html}
-            </div>
-        </div>
-    </div>
-    """
+    return f'<div class="metric-card"><div style="display: flex; align-items: center; gap: 8px;"><span style="font-size: 1.5rem;">{icon}</span><div><div class="metric-value">{value}</div><div class="metric-label">{label}</div>{delta_html}</div></div></div>'
 
 
 def render_alert(message: str, type: str = "info", icon: str = None):
@@ -377,22 +367,22 @@ def render_alert(message: str, type: str = "info", icon: str = None):
         "info": "ℹ️"
     }
     icon = icon or icons.get(type, "ℹ️")
-    return f"""
+    return textwrap.dedent(f"""
     <div class="alert-box alert-{type}">
         <span style="font-size: 1.2rem;">{icon}</span>
         <div>{message}</div>
     </div>
-    """
+    """)
 
 
 def render_footer():
     """Render the app footer."""
-    return f"""
+    return textwrap.dedent(f"""
     <div class="app-footer">
         <p><strong>{APP_NAME_CN}</strong> ({APP_NAME_EN}) - {APP_FULL_NAME}</p>
         <p>价值投资 · 不败之地 | Value Investing Made Simple</p>
     </div>
-    """
+    """)
 
 
 def get_status_style(status: str) -> str:
