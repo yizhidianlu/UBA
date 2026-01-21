@@ -1,7 +1,7 @@
 """Main Streamlit application entry point for UBA (Unbeaten Area) - 不败之地."""
 import streamlit as st
 import textwrap
-from datetime import datetime
+from datetime import datetime, date
 
 # Import UI styles
 from src.ui import (
@@ -22,6 +22,21 @@ st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 # Initialize database on first run
 from src.database import init_db
 init_db()
+
+# Track visit count
+from src.database.models import VisitLog
+
+def get_today_visits(db_session) -> int:
+    """Get and increment today's visit count."""
+    today = date.today()
+    visit_log = db_session.query(VisitLog).filter(VisitLog.visit_date == today).first()
+    if visit_log:
+        visit_log.count += 1
+    else:
+        visit_log = VisitLog(visit_date=today, count=1)
+        db_session.add(visit_log)
+    db_session.commit()
+    return visit_log.count
 
 # Render main header
 st.markdown(render_main_header(), unsafe_allow_html=True)
@@ -222,6 +237,9 @@ st.info("👈 使用左侧导航栏进入各功能模块")
 # Footer
 st.markdown(render_footer(), unsafe_allow_html=True)
 
+# Get today's visit count
+today_visits = get_today_visits(session)
+
 # Sidebar branding
 with st.sidebar:
     st.markdown(textwrap.dedent(f"""
@@ -238,5 +256,8 @@ with st.sidebar:
 
     if st.button("🔄 刷新数据", use_container_width=True):
         st.rerun()
+
+    st.divider()
+    st.caption(f"👀 今日访问: {today_visits} 次")
 
 session.close()

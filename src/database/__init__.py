@@ -1,7 +1,7 @@
-from .models import Base, Asset, Threshold, Valuation, PortfolioPosition, Signal, Action, Cost
+from .models import Base, Asset, Threshold, Valuation, PortfolioPosition, Signal, Action, Cost, VisitLog
 from .connection import get_engine, get_session, init_db
 
 __all__ = [
     'Base', 'Asset', 'Threshold', 'Valuation', 'PortfolioPosition',
-    'Signal', 'Action', 'Cost', 'get_engine', 'get_session', 'init_db'
+    'Signal', 'Action', 'Cost', 'VisitLog', 'get_engine', 'get_session', 'init_db'
 ]

@@ -158,3 +158,13 @@ class Cost(Base):
     slippage = Column(Float, default=0)  # 滑点
 
     action = relationship("Action", back_populates="costs")
+
+
+class VisitLog(Base):
+    """访问记录"""
+    __tablename__ = "visit_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    visit_date = Column(Date, nullable=False, unique=True)
+    count = Column(Integer, default=1)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
