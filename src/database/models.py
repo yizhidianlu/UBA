@@ -1,0 +1,160 @@
+"""Database models for the value investment trigger system."""
+from datetime import datetime
+from enum import Enum
+from sqlalchemy import (
+    Column, Integer, String, Float, DateTime, Date, Text,
+    ForeignKey, Boolean, Enum as SQLEnum
+)
+from sqlalchemy.orm import DeclarativeBase, relationship
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Market(str, Enum):
+    A_SHARE = "A股"
+    HK = "港股"
+    US = "美股"
+
+
+class SignalType(str, Enum):
+    BUY = "BUY"
+    ADD = "ADD"
+    SELL = "SELL"
+
+
+class SignalStatus(str, Enum):
+    OPEN = "OPEN"
+    DONE = "DONE"
+    IGNORED = "IGNORED"
+
+
+class ActionType(str, Enum):
+    BUY = "BUY"
+    ADD = "ADD"
+    HOLD = "HOLD"
+    SELL = "SELL"
+
+
+class Asset(Base):
+    """股票池中的股票"""
+    __tablename__ = "assets"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), unique=True, nullable=False)  # e.g., 600519.SH, 0700.HK
+    name = Column(String(100), nullable=False)
+    market = Column(SQLEnum(Market), nullable=False)
+    industry = Column(String(100))
+    tags = Column(String(500))  # comma-separated tags
+    competence_score = Column(Integer, default=3)  # 1-5, 能力圈评分
+    notes = Column(Text)  # 护城河/理解要点
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    # Relationships
+    threshold = relationship("Threshold", back_populates="asset", uselist=False, cascade="all, delete-orphan")
+    valuations = relationship("Valuation", back_populates="asset", cascade="all, delete-orphan")
+    position = relationship("PortfolioPosition", back_populates="asset", uselist=False, cascade="all, delete-orphan")
+    signals = relationship("Signal", back_populates="asset", cascade="all, delete-orphan")
+    actions = relationship("Action", back_populates="asset", cascade="all, delete-orphan")
+
+
+class Threshold(Base):
+    """PB触发阈值配置"""
+    __tablename__ = "thresholds"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), unique=True, nullable=False)
+    buy_pb = Column(Float, nullable=False)  # 请客价
+    add_pb = Column(Float)  # 压倒性优势价（可选）
+    sell_pb = Column(Float)  # 目标价/退出价（可选）
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    asset = relationship("Asset", back_populates="threshold")
+
+
+class Valuation(Base):
+    """历史PB数据"""
+    __tablename__ = "valuations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    pb = Column(Float, nullable=False)
+    price = Column(Float)
+    book_value_per_share = Column(Float)
+    data_source = Column(String(50), default="akshare")
+    fetched_at = Column(DateTime, default=datetime.now)
+
+    asset = relationship("Asset", back_populates="valuations")
+
+    class Meta:
+        unique_together = ('asset_id', 'date')
+
+
+class PortfolioPosition(Base):
+    """持仓信息"""
+    __tablename__ = "portfolio_positions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), unique=True, nullable=False)
+    position_pct = Column(Float, default=0)  # 仓位百分比
+    shares = Column(Integer, default=0)  # 持股数量
+    avg_cost = Column(Float)  # 平均成本
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    asset = relationship("Asset", back_populates="position")
+
+
+class Signal(Base):
+    """触发信号"""
+    __tablename__ = "signals"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    date = Column(Date, nullable=False)
+    signal_type = Column(SQLEnum(SignalType), nullable=False)
+    pb = Column(Float, nullable=False)
+    triggered_threshold = Column(Float, nullable=False)
+    explanation = Column(Text)  # 可读解释
+    status = Column(SQLEnum(SignalStatus), default=SignalStatus.OPEN)
+    created_at = Column(DateTime, default=datetime.now)
+
+    asset = relationship("Asset", back_populates="signals")
+
+
+class Action(Base):
+    """交易动作记录"""
+    __tablename__ = "actions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
+    signal_id = Column(Integer, ForeignKey("signals.id"))
+    action_date = Column(Date, nullable=False)
+    action_type = Column(SQLEnum(ActionType), nullable=False)
+    planned_position_pct = Column(Float)  # 计划仓位
+    executed_position_pct = Column(Float)  # 实际仓位
+    shares = Column(Integer)  # 交易股数
+    price = Column(Float)  # 成交价
+    reason = Column(Text, nullable=False)  # 必填：为什么符合规则
+    emotion = Column(String(50))  # 可选：恐惧/贪婪/冲动等
+    rule_compliance = Column(Boolean, default=True)  # 是否合规
+    compliance_note = Column(Text)  # 合规说明
+    created_at = Column(DateTime, default=datetime.now)
+
+    asset = relationship("Asset", back_populates="actions")
+    costs = relationship("Cost", back_populates="action", cascade="all, delete-orphan")
+
+
+class Cost(Base):
+    """交易成本"""
+    __tablename__ = "costs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    action_id = Column(Integer, ForeignKey("actions.id"), nullable=False)
+    fee = Column(Float, default=0)  # 手续费
+    tax = Column(Float, default=0)  # 印花税
+    slippage = Column(Float, default=0)  # 滑点
+
+    action = relationship("Action", back_populates="costs")

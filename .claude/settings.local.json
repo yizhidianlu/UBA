@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir /b /s \"C:\\\\Users\\\\jielu\\\\Desktop\\\\Software\\\\UBA\")",
+      "Bash(python:*)",
+      "Bash(pip install:*)",
+      "Bash(pip search:*)",
+      "Bash(pip index:*)",
+      "Bash(pip --version:*)",
+      "Bash(conda info:*)",
+      "Bash(findstr:*)",
+      "Bash(D:ApplicationMiniconda3envsUBApython.exe --version)",
+      "Bash(conda run:*)",
+      "Bash(cd:*)",
+      "Bash(conda activate:*)",
+      "Bash(powershell -Command \"cd ''C:\\\\Users\\\\jielu\\\\Desktop\\\\Software\\\\UBA''; conda activate UBA_CC; python -c ''from google import genai; print\\(\"\"google-genai OK\"\"\\)''\")",
+      "Bash(C:Usersjieluminiconda3condabinconda.bat run -n UBA_CC python -c \"from google import genai; print\\(''google-genai OK''\\)\")",
+      "Bash(where:*)",
+      "Bash(\"D:/Application/Miniconda3/envs/UBA_CC/python.exe\" \"C:/Users/jielu/Desktop/Software/UBA/test_imports.py\")",
+      "Bash(\"D:/Application/Miniconda3/envs/UBA_CC/python.exe\" \"C:/Users/jielu/Desktop/Software/UBA/test_screener.py\")",
+      "Bash(\"D:/Application/Miniconda3/envs/UBA_CC/python.exe\":*)"
+    ]
+  }
+}
