@@ -7,6 +7,7 @@ from .stock_analyzer import StockAnalyzer, StockInfo, PBAnalysis
 from .realtime_service import RealtimeService, RealtimeQuote
 from .ai_analyzer import AIAnalyzer, FundamentalData, AnalysisReport
 from .stock_screener import StockScreener, StockRecommendation
+from .background_scanner import BackgroundScanner, get_scanner
 
 __all__ = [
     'StockPoolService',
@@ -23,5 +24,7 @@ __all__ = [
     'FundamentalData',
     'AnalysisReport',
     'StockScreener',
-    'StockRecommendation'
+    'StockRecommendation',
+    'BackgroundScanner',
+    'get_scanner'
 ]

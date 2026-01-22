@@ -168,3 +168,46 @@ class VisitLog(Base):
     visit_date = Column(Date, nullable=False, unique=True)
     count = Column(Integer, default=1)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class CandidateStatus(str, Enum):
+    PENDING = "PENDING"      # 待处理
+    ADDED = "ADDED"          # 已加入股票池
+    IGNORED = "IGNORED"      # 已忽略
+
+
+class StockCandidate(Base):
+    """智能选股备选池"""
+    __tablename__ = "stock_candidates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), nullable=False)
+    name = Column(String(100), nullable=False)
+    industry = Column(String(100))
+    current_price = Column(Float)
+    current_pb = Column(Float)
+    recommended_buy_pb = Column(Float)  # 推荐请客价
+    pb_distance_pct = Column(Float)     # 距离请客价百分比
+    min_pb = Column(Float)
+    max_pb = Column(Float)
+    avg_pb = Column(Float)
+    pe_ttm = Column(Float)
+    market_cap = Column(Float)          # 市值(亿)
+    status = Column(SQLEnum(CandidateStatus), default=CandidateStatus.PENDING)
+    scanned_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class ScanProgress(Base):
+    """扫描进度记录"""
+    __tablename__ = "scan_progress"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    current_index = Column(Integer, default=0)      # 当前扫描到的索引
+    total_stocks = Column(Integer, default=0)       # 总股票数
+    last_scanned_code = Column(String(20))          # 上次扫描的股票代码
+    is_running = Column(Boolean, default=False)     # 是否正在运行
+    scan_interval = Column(Integer, default=30)     # 扫描间隔(秒)
+    pb_threshold_pct = Column(Float, default=20.0)  # PB距离阈值百分比
+    started_at = Column(DateTime)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
