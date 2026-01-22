@@ -2,9 +2,24 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from src.database import get_session, init_db, StockCandidate, ScanProgress, CandidateStatus
+
+# Database imports
+from src.database import get_session, init_db
 from src.database.models import Market
-from src.services import StockPoolService, ValuationService, StockScreener, StockAnalyzer, get_scanner
+
+# Import new models for background scanning
+try:
+    from src.database.models import StockCandidate, ScanProgress, CandidateStatus
+    from src.services.background_scanner import get_scanner
+    SCANNER_AVAILABLE = True
+except ImportError as e:
+    print(f"Background scanner not available: {e}")
+    SCANNER_AVAILABLE = False
+    StockCandidate = None
+    ScanProgress = None
+    CandidateStatus = None
+
+from src.services import StockPoolService, ValuationService, StockScreener, StockAnalyzer
 from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer, render_alert
 
 st.set_page_config(
@@ -35,7 +50,7 @@ def get_analyzer():
 
 screener = get_screener()
 analyzer = get_analyzer()
-scanner = get_scanner()
+scanner = get_scanner() if SCANNER_AVAILABLE else None
 
 # Session state
 if 'recommendations' not in st.session_state:
@@ -179,6 +194,10 @@ with tab1:
 
 # ==================== Tab 2: Background Scan ====================
 with tab2:
+    if not SCANNER_AVAILABLE:
+        st.warning("⚠️ 后台扫描功能暂不可用，请稍后重试或刷新页面")
+        st.stop()
+
     st.markdown("### 🔄 全市场后台扫描")
     st.markdown("""
     <div style="background: #E3F2FD; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
@@ -189,7 +208,7 @@ with tab2:
     """, unsafe_allow_html=True)
 
     # Get current progress
-    progress_info = scanner.get_progress()
+    progress_info = scanner.get_progress() if scanner else None
 
     col1, col2 = st.columns(2)
 
