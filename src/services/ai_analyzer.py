@@ -3,12 +3,26 @@ from typing import Optional, Dict, List
 from dataclasses import dataclass
 from datetime import datetime, date
 import requests
+import os
 
 from google import genai
 
 # Gemini API Configuration
-GEMINI_API_KEY = "AIzaSyAc3A-GpFp4c0013EgBbY7oS52UllF8HI0"
-GEMINI_MODEL = "gemini-3-flash-preview"
+GEMINI_MODEL = "gemini-2.0-flash"
+
+
+def get_gemini_api_key() -> Optional[str]:
+    """Get Gemini API key from Streamlit secrets or environment variable."""
+    # Try Streamlit secrets first (for Streamlit Cloud)
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and 'GEMINI_API_KEY' in st.secrets:
+            return st.secrets['GEMINI_API_KEY']
+    except Exception:
+        pass
+
+    # Fallback to environment variable
+    return os.environ.get('GEMINI_API_KEY')
 
 
 @dataclass
@@ -48,10 +62,14 @@ class AnalysisReport:
 class AIAnalyzer:
     """AI 股票分析器"""
 
-    def __init__(self, api_key: str = GEMINI_API_KEY):
-        self.api_key = api_key
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or get_gemini_api_key()
         self.last_error = None
-        self.client = genai.Client(api_key=api_key)
+        self.client = None
+        if self.api_key:
+            self.client = genai.Client(api_key=self.api_key)
+        else:
+            self.last_error = "未配置 Gemini API Key，请在 Streamlit Secrets 中设置 GEMINI_API_KEY"
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json'
@@ -59,6 +77,10 @@ class AIAnalyzer:
 
     def _call_gemini(self, prompt: str) -> Optional[str]:
         """调用 Gemini API"""
+        if not self.client:
+            self.last_error = "未配置 Gemini API Key，请在 Streamlit Secrets 中设置 GEMINI_API_KEY"
+            return None
+
         self.last_error = None
 
         try:
