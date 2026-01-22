@@ -38,6 +38,9 @@ data/*.db
 data/*.sqlite
 data/*.sqlite3
 
+# Cache files
+data/*.json
+
 # Logs
 *.log
 logs/

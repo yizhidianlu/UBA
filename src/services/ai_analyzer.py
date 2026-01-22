@@ -5,7 +5,12 @@ from datetime import datetime, date
 import requests
 import os
 
-from openai import OpenAI
+try:
+    from openai import OpenAI
+    OPENAI_AVAILABLE = True
+except ImportError:
+    OpenAI = None
+    OPENAI_AVAILABLE = False
 
 # Qwen API Configuration (DashScope)
 QWEN_MODEL = "qwen3-max"

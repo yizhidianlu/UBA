@@ -1,12 +1,25 @@
 """Background stock scanner service for smart stock selection."""
 import time
 import threading
+import json
+import os
 from datetime import datetime
 from typing import Optional, List, Callable
 import requests
 
+try:
+    import tushare as ts
+    TUSHARE_AVAILABLE = True
+except ImportError:
+    ts = None
+    TUSHARE_AVAILABLE = False
+
 from src.database import get_session, init_db
 from src.database.models import StockCandidate, ScanProgress, CandidateStatus, Asset
+
+# 缓存文件路径
+CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
+STOCK_LIST_CACHE = os.path.join(CACHE_DIR, 'stock_list_cache.json')
 
 
 class BackgroundScanner:
@@ -21,17 +34,93 @@ class BackgroundScanner:
         self._stop_event = threading.Event()
         self._scan_thread: Optional[threading.Thread] = None
         self._progress_callback: Optional[Callable] = None
+        self._cached_stocks: Optional[List[dict]] = None
+
+    def _load_stock_cache(self) -> Optional[List[dict]]:
+        """从缓存加载股票列表"""
+        try:
+            if os.path.exists(STOCK_LIST_CACHE):
+                with open(STOCK_LIST_CACHE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # 检查缓存是否过期（24小时）
+                    cache_time = datetime.fromisoformat(data.get('timestamp', '2000-01-01'))
+                    if (datetime.now() - cache_time).total_seconds() < 86400:
+                        print(f"从缓存加载股票列表: {len(data.get('stocks', []))} 只")
+                        return data.get('stocks', [])
+        except Exception as e:
+            print(f"加载缓存失败: {e}")
+        return None
+
+    def _save_stock_cache(self, stocks: List[dict]):
+        """保存股票列表到缓存"""
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(STOCK_LIST_CACHE, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'timestamp': datetime.now().isoformat(),
+                    'stocks': stocks
+                }, f, ensure_ascii=False)
+            print(f"股票列表已缓存: {len(stocks)} 只")
+        except Exception as e:
+            print(f"保存缓存失败: {e}")
+
+    def _request_with_retry(self, url: str, params: dict, max_retries: int = 3) -> Optional[dict]:
+        """带重试的HTTP请求"""
+        for attempt in range(max_retries):
+            try:
+                resp = self.session.get(url, params=params, timeout=30)
+                return resp.json()
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                    time.sleep(2 ** attempt)  # 指数退避
+                else:
+                    print(f"请求失败，已重试 {max_retries} 次: {e}")
+        return None
 
     def get_all_a_shares(self) -> List[dict]:
         """获取所有A股股票列表"""
-        stocks = []
-        try:
-            # 使用东方财富接口获取A股列表
-            url = "https://push2.eastmoney.com/api/qt/clist/get"
-            page_size = 100  # API returns max 100 items per page
+        # 1. 先尝试从缓存加载
+        cached = self._load_stock_cache()
+        if cached:
+            return cached
 
-            # 获取沪市和深市
-            for fs in ["m:1+t:2,m:1+t:23", "m:0+t:6,m:0+t:80"]:  # 沪市, 深市
+        stocks = []
+
+        # 2. 尝试使用 Tushare
+        if TUSHARE_AVAILABLE:
+            try:
+                print("使用Tushare获取股票列表...")
+                df = ts.get_today_all()
+                if df is not None and len(df) > 0:
+                    for _, row in df.iterrows():
+                        code = str(row.get('code', ''))
+                        name = str(row.get('name', ''))
+                        # 过滤ST股票和退市股
+                        if code and name and 'ST' not in name and '退' not in name:
+                            stocks.append({
+                                'code': code,
+                                'name': name,
+                                'change_pct': row.get('changepercent'),
+                                'price': row.get('trade'),
+                                'pb': row.get('pb'),
+                                'pe': row.get('pe'),
+                                'market_cap': row.get('mktcap') / 10000 if row.get('mktcap') else None,  # 转换为亿
+                                'industry': ''
+                            })
+                    print(f"Tushare获取成功: {len(stocks)} 只股票")
+                    self._save_stock_cache(stocks)
+                    return stocks
+            except Exception as e:
+                print(f"Tushare获取失败: {e}")
+
+        # 备用: 使用东方财富接口
+        print("使用东方财富接口获取股票列表...")
+        try:
+            url = "https://push2.eastmoney.com/api/qt/clist/get"
+            page_size = 100
+
+            for fs in ["m:1+t:2,m:1+t:23", "m:0+t:6,m:0+t:80"]:
                 page = 1
                 while True:
                     params = {
@@ -41,14 +130,14 @@ class BackgroundScanner:
                         'fields': 'f12,f14,f3,f2,f23,f9,f20,f100',
                         'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
                     }
-                    resp = self.session.get(url, params=params, timeout=30)
-                    data = resp.json()
+                    data = self._request_with_retry(url, params)
+                    if not data:
+                        break
 
                     diff = data.get('data', {}).get('diff')
                     if not diff:
                         break
 
-                    # diff can be a dict with numeric keys or a list
                     items = diff.values() if isinstance(diff, dict) else diff
                     items_list = list(items)
 
@@ -58,7 +147,6 @@ class BackgroundScanner:
                     for item in items_list:
                         code = item.get('f12', '')
                         name = item.get('f14', '')
-                        # 过滤ST股票和退市股
                         if code and name and 'ST' not in name and '退' not in name:
                             stocks.append({
                                 'code': code,
@@ -71,15 +159,18 @@ class BackgroundScanner:
                                 'industry': item.get('f100', '')
                             })
 
-                    # Check if we've reached the last page
                     if len(items_list) < page_size:
                         break
 
                     page += 1
-                    time.sleep(0.3)  # 请求间隔
+                    time.sleep(0.5)
+
+            # 保存到缓存
+            if stocks:
+                self._save_stock_cache(stocks)
 
         except Exception as e:
-            print(f"获取A股列表失败: {e}")
+            print(f"东方财富获取失败: {e}")
 
         return stocks
 
@@ -210,6 +301,7 @@ class BackgroundScanner:
         """扫描主循环"""
         init_db()
         db_session = get_session()
+        progress = None
 
         try:
             # 获取或创建扫描进度
@@ -230,11 +322,18 @@ class BackgroundScanner:
                 progress.started_at = datetime.now()
             db_session.commit()
 
-            # 获取股票列表
+            # 获取股票列表（带重试）
             print("正在获取A股列表...")
-            stocks = self.get_all_a_shares()
+            stocks = None
+            for attempt in range(3):
+                stocks = self.get_all_a_shares()
+                if stocks:
+                    break
+                print(f"获取股票列表失败，重试 {attempt + 1}/3...")
+                time.sleep(5)
+
             if not stocks:
-                print("获取股票列表失败")
+                print("获取股票列表失败，扫描终止")
                 return
 
             progress.total_stocks = len(stocks)
@@ -320,9 +419,12 @@ class BackgroundScanner:
 
         except Exception as e:
             print(f"扫描出错: {e}")
+            import traceback
+            traceback.print_exc()
         finally:
-            progress.is_running = False
-            db_session.commit()
+            if progress:
+                progress.is_running = False
+                db_session.commit()
             db_session.close()
 
     def get_progress(self) -> Optional[dict]:
