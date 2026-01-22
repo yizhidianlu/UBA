@@ -28,21 +28,34 @@ class BackgroundScanner:
         try:
             # 使用东方财富接口获取A股列表
             url = "https://push2.eastmoney.com/api/qt/clist/get"
+            page_size = 100  # API returns max 100 items per page
 
-            # 获取沪市主板
+            # 获取沪市和深市
             for fs in ["m:1+t:2,m:1+t:23", "m:0+t:6,m:0+t:80"]:  # 沪市, 深市
-                params = {
-                    'pn': 1,
-                    'pz': 5000,
-                    'fs': fs,
-                    'fields': 'f12,f14,f3,f2,f23,f9,f20,f100',
-                    'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-                }
-                resp = self.session.get(url, params=params, timeout=30)
-                data = resp.json()
+                page = 1
+                while True:
+                    params = {
+                        'pn': page,
+                        'pz': page_size,
+                        'fs': fs,
+                        'fields': 'f12,f14,f3,f2,f23,f9,f20,f100',
+                        'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
+                    }
+                    resp = self.session.get(url, params=params, timeout=30)
+                    data = resp.json()
 
-                if data.get('data', {}).get('diff'):
-                    for item in data['data']['diff']:
+                    diff = data.get('data', {}).get('diff')
+                    if not diff:
+                        break
+
+                    # diff can be a dict with numeric keys or a list
+                    items = diff.values() if isinstance(diff, dict) else diff
+                    items_list = list(items)
+
+                    if not items_list:
+                        break
+
+                    for item in items_list:
                         code = item.get('f12', '')
                         name = item.get('f14', '')
                         # 过滤ST股票和退市股
@@ -57,7 +70,13 @@ class BackgroundScanner:
                                 'market_cap': item.get('f20') / 100000000 if item.get('f20') else None,
                                 'industry': item.get('f100', '')
                             })
-                time.sleep(0.5)  # 请求间隔
+
+                    # Check if we've reached the last page
+                    if len(items_list) < page_size:
+                        break
+
+                    page += 1
+                    time.sleep(0.3)  # 请求间隔
 
         except Exception as e:
             print(f"获取A股列表失败: {e}")
@@ -279,7 +298,7 @@ class BackgroundScanner:
                             status=CandidateStatus.PENDING
                         )
                         db_session.add(candidate)
-                        print(f"  ✓ 符合条件! 距离请客价: {analysis['pb_distance_pct']:.1f}%")
+                        print(f"  [OK] 符合条件! 距离请客价: {analysis['pb_distance_pct']:.1f}%")
 
                 # 更新进度
                 progress.current_index = i + 1
