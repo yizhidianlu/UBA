@@ -330,9 +330,9 @@ if stocks:
                     if stats:
                         st.caption(f"历史参考: 最低 {stats['min_pb']:.2f} / 平均 {stats['avg_pb']:.2f} / 最高 {stats['max_pb']:.2f}")
 
-                    new_buy_pb = st.number_input("请客价", value=stock.threshold.buy_pb, min_value=0.01, key="edit_buy")
-                    new_add_pb = st.number_input("加仓价", value=stock.threshold.add_pb or 0.0, min_value=0.0, key="edit_add")
-                    new_sell_pb = st.number_input("退出价", value=stock.threshold.sell_pb or 0.0, min_value=0.0, key="edit_sell")
+                    new_buy_pb = st.number_input("请客价", value=float(stock.threshold.buy_pb), min_value=0.01, step=0.01, key="edit_buy")
+                    new_add_pb = st.number_input("加仓价", value=float(stock.threshold.add_pb or 0.0), min_value=0.0, step=0.01, key="edit_add")
+                    new_sell_pb = st.number_input("退出价", value=float(stock.threshold.sell_pb or 0.0), min_value=0.0, step=0.01, key="edit_sell")
 
                     if st.button("💾 保存阈值", use_container_width=True):
                         stock_service.update_threshold(stock.code, buy_pb=new_buy_pb,

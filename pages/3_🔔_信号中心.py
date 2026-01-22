@@ -62,7 +62,7 @@ with tab1:
                             "买入仓位 (%)",
                             min_value=0.0,
                             max_value=10.0,
-                            value=min(5.0, available),
+                            value=float(min(5.0, available)),
                             step=0.5,
                             key=f"position_{signal.id}"
                         )
@@ -72,12 +72,12 @@ with tab1:
                         pos = session.query(PortfolioPosition).filter(
                             PortfolioPosition.asset_id == asset.id
                         ).first()
-                        current_pos = pos.position_pct if pos else 0
+                        current_pos = float(pos.position_pct) if pos and pos.position_pct else 0.0
 
                         position_pct = st.number_input(
                             "卖出仓位 (%)",
                             min_value=0.0,
-                            max_value=current_pos,
+                            max_value=max(0.01, current_pos),
                             value=current_pos,
                             step=0.5,
                             key=f"position_{signal.id}"

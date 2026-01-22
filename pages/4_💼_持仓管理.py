@@ -174,14 +174,14 @@ with st.expander("⚙️ 手动调整仓位"):
                     PortfolioPosition.asset_id == asset.id
                 ).first()
 
-                current_pct = pos.position_pct if pos else 0
-                current_cost = pos.avg_cost if pos else 0
+                current_pct = float(pos.position_pct) if pos and pos.position_pct else 0.0
+                current_cost = float(pos.avg_cost) if pos and pos.avg_cost else 0.0
 
                 col1, col2 = st.columns(2)
                 with col1:
-                    new_pct = st.number_input("仓位(%)", value=current_pct, min_value=0.0, max_value=100.0)
+                    new_pct = st.number_input("仓位(%)", value=current_pct, min_value=0.0, max_value=100.0, step=0.1)
                 with col2:
-                    new_cost = st.number_input("平均成本", value=current_cost, min_value=0.0)
+                    new_cost = st.number_input("平均成本", value=current_cost, min_value=0.0, step=0.01)
 
                 if st.button("更新仓位"):
                     risk_control.update_position(
