@@ -1,4 +1,4 @@
-"""AI-powered stock analysis using OpenAI API."""
+"""AI-powered stock analysis using Qwen API (Alibaba Cloud)."""
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 from datetime import datetime, date
@@ -7,22 +7,23 @@ import os
 
 from openai import OpenAI
 
-# OpenAI API Configuration
-OPENAI_MODEL = "gpt-4.1"
+# Qwen API Configuration (DashScope)
+QWEN_MODEL = "qwen-max"
+QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 
-def get_openai_api_key() -> Optional[str]:
-    """Get OpenAI API key from Streamlit secrets or environment variable."""
+def get_qwen_api_key() -> Optional[str]:
+    """Get Qwen API key from Streamlit secrets or environment variable."""
     # Try Streamlit secrets first (for Streamlit Cloud)
     try:
         import streamlit as st
-        if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
-            return st.secrets['OPENAI_API_KEY']
+        if hasattr(st, 'secrets') and 'QWEN_API_KEY' in st.secrets:
+            return st.secrets['QWEN_API_KEY']
     except Exception:
         pass
 
     # Fallback to environment variable
-    return os.environ.get('OPENAI_API_KEY')
+    return os.environ.get('QWEN_API_KEY')
 
 
 @dataclass
@@ -63,29 +64,29 @@ class AIAnalyzer:
     """AI 股票分析器"""
 
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or get_openai_api_key()
+        self.api_key = api_key or get_qwen_api_key()
         self.last_error = None
         self.client = None
         if self.api_key:
-            self.client = OpenAI(api_key=self.api_key)
+            self.client = OpenAI(api_key=self.api_key, base_url=QWEN_BASE_URL)
         else:
-            self.last_error = "未配置 OpenAI API Key，请在 Streamlit Secrets 中设置 OPENAI_API_KEY"
+            self.last_error = "未配置 Qwen API Key，请在 Streamlit Secrets 中设置 QWEN_API_KEY"
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json'
         })
 
     def _call_openai(self, prompt: str) -> Optional[str]:
-        """调用 OpenAI API"""
+        """调用 Qwen API (OpenAI 兼容模式)"""
         if not self.client:
-            self.last_error = "未配置 OpenAI API Key，请在 Streamlit Secrets 中设置 OPENAI_API_KEY"
+            self.last_error = "未配置 Qwen API Key，请在 Streamlit Secrets 中设置 QWEN_API_KEY"
             return None
 
         self.last_error = None
 
         try:
             response = self.client.chat.completions.create(
-                model=OPENAI_MODEL,
+                model=QWEN_MODEL,
                 messages=[
                     {"role": "system", "content": "你是一位专业的价值投资分析师，擅长分析股票基本面和估值。"},
                     {"role": "user", "content": prompt}
@@ -103,13 +104,13 @@ class AIAnalyzer:
                 self.last_error = "网络连接失败，请检查网络"
             elif "429" in error_str or "rate" in error_str.lower():
                 self.last_error = "API请求过于频繁，请稍后重试"
-            elif "401" in error_str or "invalid" in error_str.lower() and "key" in error_str.lower():
+            elif "401" in error_str or "InvalidApiKey" in error_str:
                 self.last_error = "API密钥无效，请检查配置"
-            elif "insufficient_quota" in error_str.lower():
+            elif "insufficient" in error_str.lower() or "quota" in error_str.lower():
                 self.last_error = "API配额已用尽，请检查账户余额"
             else:
                 self.last_error = f"API调用异常: {error_str[:100]}"
-            print(f"OpenAI API call failed: {e}")
+            print(f"Qwen API call failed: {e}")
 
         return None
 
