@@ -160,7 +160,7 @@ class BackgroundScanner:
             print(f"分析股票 {code} 失败: {e}")
             return None
 
-    def start_scan(self, pb_threshold_pct: float = 20.0, scan_interval: int = 30,
+    def start_scan(self, pb_threshold_pct: float = 20.0, scan_interval: int = 120,
                    progress_callback: Callable = None):
         """启动后台扫描"""
         if self._scan_thread and self._scan_thread.is_alive():

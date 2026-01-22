@@ -227,12 +227,12 @@ with tab2:
 
         bg_interval = st.slider(
             "扫描间隔 (秒)",
-            min_value=10,
-            max_value=120,
-            value=30,
-            step=10,
+            min_value=60,
+            max_value=300,
+            value=120,
+            step=30,
             key="bg_interval",
-            help="每只股票分析间隔，建议30秒以上避免限制"
+            help="每只股票分析间隔，建议120秒以上避免API限制"
         )
 
     with col2:

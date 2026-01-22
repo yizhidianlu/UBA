@@ -207,7 +207,7 @@ class ScanProgress(Base):
     total_stocks = Column(Integer, default=0)       # 总股票数
     last_scanned_code = Column(String(20))          # 上次扫描的股票代码
     is_running = Column(Boolean, default=False)     # 是否正在运行
-    scan_interval = Column(Integer, default=30)     # 扫描间隔(秒)
+    scan_interval = Column(Integer, default=120)    # 扫描间隔(秒)
     pb_threshold_pct = Column(Float, default=20.0)  # PB距离阈值百分比
     started_at = Column(DateTime)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
