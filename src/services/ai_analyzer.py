@@ -1,28 +1,28 @@
-"""AI-powered stock analysis using Gemini API."""
+"""AI-powered stock analysis using OpenAI API."""
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 from datetime import datetime, date
 import requests
 import os
 
-from google import genai
+from openai import OpenAI
 
-# Gemini API Configuration
-GEMINI_MODEL = "gemini-2.5-flash"
+# OpenAI API Configuration
+OPENAI_MODEL = "gpt-4.1"
 
 
-def get_gemini_api_key() -> Optional[str]:
-    """Get Gemini API key from Streamlit secrets or environment variable."""
+def get_openai_api_key() -> Optional[str]:
+    """Get OpenAI API key from Streamlit secrets or environment variable."""
     # Try Streamlit secrets first (for Streamlit Cloud)
     try:
         import streamlit as st
-        if hasattr(st, 'secrets') and 'GEMINI_API_KEY' in st.secrets:
-            return st.secrets['GEMINI_API_KEY']
+        if hasattr(st, 'secrets') and 'OPENAI_API_KEY' in st.secrets:
+            return st.secrets['OPENAI_API_KEY']
     except Exception:
         pass
 
     # Fallback to environment variable
-    return os.environ.get('GEMINI_API_KEY')
+    return os.environ.get('OPENAI_API_KEY')
 
 
 @dataclass
@@ -63,32 +63,37 @@ class AIAnalyzer:
     """AI 股票分析器"""
 
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or get_gemini_api_key()
+        self.api_key = api_key or get_openai_api_key()
         self.last_error = None
         self.client = None
         if self.api_key:
-            self.client = genai.Client(api_key=self.api_key)
+            self.client = OpenAI(api_key=self.api_key)
         else:
-            self.last_error = "未配置 Gemini API Key，请在 Streamlit Secrets 中设置 GEMINI_API_KEY"
+            self.last_error = "未配置 OpenAI API Key，请在 Streamlit Secrets 中设置 OPENAI_API_KEY"
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json'
         })
 
-    def _call_gemini(self, prompt: str) -> Optional[str]:
-        """调用 Gemini API"""
+    def _call_openai(self, prompt: str) -> Optional[str]:
+        """调用 OpenAI API"""
         if not self.client:
-            self.last_error = "未配置 Gemini API Key，请在 Streamlit Secrets 中设置 GEMINI_API_KEY"
+            self.last_error = "未配置 OpenAI API Key，请在 Streamlit Secrets 中设置 OPENAI_API_KEY"
             return None
 
         self.last_error = None
 
         try:
-            response = self.client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt
+            response = self.client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": "你是一位专业的价值投资分析师，擅长分析股票基本面和估值。"},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=4096
             )
-            return response.text
+            return response.choices[0].message.content
 
         except Exception as e:
             error_str = str(e)
@@ -96,13 +101,15 @@ class AIAnalyzer:
                 self.last_error = "API请求超时，请稍后重试"
             elif "connect" in error_str.lower() or "network" in error_str.lower():
                 self.last_error = "网络连接失败，请检查网络"
-            elif "429" in error_str or "quota" in error_str.lower() or "RESOURCE_EXHAUSTED" in error_str:
-                self.last_error = "API配额已用尽，请稍后重试（约1分钟后）或检查API计划"
-            elif "api" in error_str.lower() and "key" in error_str.lower():
+            elif "429" in error_str or "rate" in error_str.lower():
+                self.last_error = "API请求过于频繁，请稍后重试"
+            elif "401" in error_str or "invalid" in error_str.lower() and "key" in error_str.lower():
                 self.last_error = "API密钥无效，请检查配置"
+            elif "insufficient_quota" in error_str.lower():
+                self.last_error = "API配额已用尽，请检查账户余额"
             else:
                 self.last_error = f"API调用异常: {error_str[:100]}"
-            print(f"Gemini API call failed: {e}")
+            print(f"OpenAI API call failed: {e}")
 
         return None
 
@@ -317,7 +324,7 @@ PB历史数据 (近5年):
 请确保分析客观、专业，不要过于乐观或悲观。"""
 
         # 调用 Gemini
-        response = self._call_gemini(prompt)
+        response = self._call_openai(prompt)
 
         if not response:
             return None
@@ -419,4 +426,4 @@ PB历史数据 (近5年):
 
 请简要评估其估值水平和投资价值。"""
 
-        return self._call_gemini(prompt)
+        return self._call_openai(prompt)
