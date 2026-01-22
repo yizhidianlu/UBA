@@ -79,6 +79,8 @@ class StockPoolService:
         industry: Optional[str] = None,
         tags: Optional[str] = None,
         competence_score: Optional[int] = None,
+        ai_score: Optional[int] = None,
+        ai_suggestion: Optional[str] = None,
         notes: Optional[str] = None
     ) -> Optional[Asset]:
         """更新股票信息"""
@@ -94,6 +96,10 @@ class StockPoolService:
             asset.tags = tags
         if competence_score is not None:
             asset.competence_score = competence_score
+        if ai_score is not None:
+            asset.ai_score = ai_score
+        if ai_suggestion is not None:
+            asset.ai_suggestion = ai_suggestion
         if notes is not None:
             asset.notes = notes
 

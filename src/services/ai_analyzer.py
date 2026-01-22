@@ -64,6 +64,7 @@ class AnalysisReport:
     investment_suggestion: str  # 投资建议
     pb_recommendation: str  # PB阈值建议
     full_report: str  # 完整报告
+    ai_score: int = 3  # AI投资评分 1-5
 
 
 class AIAnalyzer:
@@ -347,6 +348,14 @@ PB历史数据 (近5年):
 ## PB阈值建议
 (根据历史PB数据和公司质地，建议合理的买入PB、加仓PB和卖出PB)
 
+## AI投资评分
+(给出1-5分的投资评分，1分最低5分最高。格式必须为: "评分: X分"。评分标准:
+- 5分: 极佳投资机会，估值极低，基本面优秀
+- 4分: 良好投资机会，估值较低或基本面较好
+- 3分: 一般，可观望
+- 2分: 不推荐，估值偏高或基本面有隐患
+- 1分: 建议回避，风险较大)
+
 请确保分析客观、专业，不要过于乐观或悲观。"""
 
         # 调用 Gemini
@@ -362,6 +371,7 @@ PB历史数据 (近5年):
 
     def _parse_report(self, response: str, fundamental: FundamentalData) -> AnalysisReport:
         """解析 AI 响应为结构化报告"""
+        import re
 
         # 简单解析各部分
         sections = {
@@ -370,7 +380,8 @@ PB历史数据 (近5年):
             'fundamental': '',
             'risk': '',
             'suggestion': '',
-            'pb_recommendation': ''
+            'pb_recommendation': '',
+            'ai_score': ''
         }
 
         current_section = None
@@ -399,7 +410,7 @@ PB历史数据 (近5年):
                     sections[current_section] = '\n'.join(current_content).strip()
                 current_section = 'risk'
                 current_content = []
-            elif '投资建议' in line:
+            elif '投资建议' in line and 'AI' not in line:
                 if current_section:
                     sections[current_section] = '\n'.join(current_content).strip()
                 current_section = 'suggestion'
@@ -409,12 +420,32 @@ PB历史数据 (近5年):
                     sections[current_section] = '\n'.join(current_content).strip()
                 current_section = 'pb_recommendation'
                 current_content = []
+            elif 'AI投资评分' in line or 'AI评分' in line or 'ai评分' in line_lower:
+                if current_section:
+                    sections[current_section] = '\n'.join(current_content).strip()
+                current_section = 'ai_score'
+                current_content = []
             elif current_section:
                 if not line.startswith('#'):
                     current_content.append(line)
 
         if current_section:
             sections[current_section] = '\n'.join(current_content).strip()
+
+        # 提取AI评分数字
+        ai_score = 3  # 默认3分
+        score_text = sections.get('ai_score', '')
+        if score_text:
+            # 尝试匹配 "评分: X分" 或 "X分" 或数字
+            match = re.search(r'(\d)[分/]', score_text)
+            if match:
+                ai_score = int(match.group(1))
+            else:
+                match = re.search(r'[：:]\s*(\d)', score_text)
+                if match:
+                    ai_score = int(match.group(1))
+        # 确保在1-5范围内
+        ai_score = max(1, min(5, ai_score))
 
         return AnalysisReport(
             code=fundamental.code,
@@ -426,7 +457,8 @@ PB历史数据 (近5年):
             risk_analysis=sections['risk'] or "暂无风险分析",
             investment_suggestion=sections['suggestion'] or "暂无投资建议",
             pb_recommendation=sections['pb_recommendation'] or "暂无PB建议",
-            full_report=response
+            full_report=response,
+            ai_score=ai_score
         )
 
     def quick_analysis(self, code: str) -> Optional[str]:

@@ -48,6 +48,8 @@ class Asset(Base):
     industry = Column(String(100))
     tags = Column(String(500))  # comma-separated tags
     competence_score = Column(Integer, default=3)  # 1-5, 能力圈评分
+    ai_score = Column(Integer)  # 1-5, AI投资评分
+    ai_suggestion = Column(Text)  # AI投资建议摘要
     notes = Column(Text)  # 护城河/理解要点
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

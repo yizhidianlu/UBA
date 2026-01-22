@@ -5,7 +5,7 @@ import plotly.graph_objects as go
 from datetime import datetime
 from src.database import get_session
 from src.database.models import Market, Valuation
-from src.services import StockPoolService, ValuationService, StockAnalyzer, RealtimeService
+from src.services import StockPoolService, ValuationService, StockAnalyzer, RealtimeService, AIAnalyzer
 from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer
 
 st.set_page_config(
@@ -291,7 +291,8 @@ if stocks:
             "实时PB": f"{current_pb:.2f}" if current_pb else "-",
             "请客价": f"{buy_pb:.2f}" if buy_pb else "-",
             "距离": distance_str,
-            "评分": "⭐" * stock.competence_score
+            "能力圈": "⭐" * stock.competence_score,
+            "AI评分": "🤖" + "⭐" * stock.ai_score if stock.ai_score else "-"
         })
 
     df = pd.DataFrame(data)
@@ -317,10 +318,31 @@ if stocks:
             with col1:
                 st.markdown(f"#### {stock.name}")
                 st.markdown(f"**代码:** {stock.code} | **市场:** {stock.market.value}")
-                st.markdown(f"**行业:** {stock.industry or '未设置'} | **评分:** {'⭐' * stock.competence_score}")
+                st.markdown(f"**行业:** {stock.industry or '未设置'}")
 
                 if quote:
                     st.markdown(f"**实时数据:** 价格 {quote.price:.2f} | PB {quote.pb:.2f}" if quote.pb else f"**实时价格:** {quote.price:.2f}")
+
+                # 评分编辑
+                st.markdown("**评分设置**")
+                new_competence = st.slider(
+                    "能力圈评分",
+                    min_value=1,
+                    max_value=5,
+                    value=stock.competence_score,
+                    help="您对该股票的理解程度 (1-5)",
+                    key="edit_competence"
+                )
+
+                ai_score_display = f"🤖 {'⭐' * stock.ai_score} ({stock.ai_score}分)" if stock.ai_score else "未评分"
+                st.markdown(f"**AI评分:** {ai_score_display}")
+                if stock.ai_suggestion:
+                    st.caption(f"AI建议: {stock.ai_suggestion[:100]}..." if len(stock.ai_suggestion or '') > 100 else f"AI建议: {stock.ai_suggestion}")
+
+                if st.button("💾 保存评分", use_container_width=True, key="save_score"):
+                    stock_service.update_stock(stock.code, competence_score=new_competence)
+                    st.success("评分已保存")
+                    st.rerun()
 
             with col2:
                 st.markdown("**阈值设置**")
@@ -341,7 +363,7 @@ if stocks:
                         st.success("已保存")
                         st.rerun()
 
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             with col1:
                 if st.button("🔄 更新历史PB", use_container_width=True):
                     with st.spinner("获取数据..."):
@@ -355,6 +377,37 @@ if stocks:
                             st.warning("未获取到数据")
 
             with col2:
+                if st.button("🤖 更新AI评分", use_container_width=True):
+                    with st.spinner("AI分析中..."):
+                        try:
+                            ai_analyzer = AIAnalyzer()
+                            if ai_analyzer.last_error:
+                                st.error(ai_analyzer.last_error)
+                            else:
+                                fundamental = ai_analyzer.fetch_fundamental_data(stock.code)
+                                if fundamental:
+                                    pb_data = analyzer.fetch_pb_history(stock.code, years=5)
+                                    report = ai_analyzer.generate_analysis_report(
+                                        fundamental,
+                                        pb_history=pb_data,
+                                        threshold_buy=stock.threshold.buy_pb if stock.threshold else None
+                                    )
+                                    if report:
+                                        stock_service.update_stock(
+                                            stock.code,
+                                            ai_score=report.ai_score,
+                                            ai_suggestion=report.summary
+                                        )
+                                        st.success(f"AI评分已更新: {report.ai_score}分")
+                                        st.rerun()
+                                    else:
+                                        st.error(ai_analyzer.last_error or "AI分析失败")
+                                else:
+                                    st.error("无法获取股票数据")
+                        except Exception as e:
+                            st.error(f"AI分析失败: {e}")
+
+            with col3:
                 if st.button("🗑️ 删除股票", type="secondary", use_container_width=True):
                     stock_service.remove_stock(selected_code)
                     st.success(f"已删除 {selected_code}")
