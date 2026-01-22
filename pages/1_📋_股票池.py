@@ -292,7 +292,7 @@ if stocks:
             "请客价": f"{buy_pb:.2f}" if buy_pb else "-",
             "距离": distance_str,
             "能力圈": "⭐" * stock.competence_score,
-            "AI评分": "🤖" + "⭐" * stock.ai_score if stock.ai_score else "-"
+            "AI评分": ("🤖" + "⭐" * stock.ai_score) if stock.ai_score else "-"
         })
 
     df = pd.DataFrame(data)
