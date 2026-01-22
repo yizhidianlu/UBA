@@ -8,7 +8,7 @@ import os
 from google import genai
 
 # Gemini API Configuration
-GEMINI_MODEL = "gemini-2.0-flash"
+GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def get_gemini_api_key() -> Optional[str]:
