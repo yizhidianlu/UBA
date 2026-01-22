@@ -2,8 +2,8 @@
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from src.database import get_session, init_db
-from src.database.models import Market, StockCandidate, ScanProgress, CandidateStatus
+from src.database import get_session, init_db, StockCandidate, ScanProgress, CandidateStatus
+from src.database.models import Market
 from src.services import StockPoolService, ValuationService, StockScreener, StockAnalyzer, get_scanner
 from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer, render_alert
 
