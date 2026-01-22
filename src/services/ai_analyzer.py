@@ -8,8 +8,9 @@ import os
 from openai import OpenAI
 
 # Qwen API Configuration (DashScope)
-QWEN_MODEL = "qwen-max"
+QWEN_MODEL = "qwen3-max"
 QWEN_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+ENABLE_THINKING = True  # 开启深度思考模式
 
 
 def get_qwen_api_key() -> Optional[str]:
@@ -77,7 +78,7 @@ class AIAnalyzer:
         })
 
     def _call_openai(self, prompt: str) -> Optional[str]:
-        """调用 Qwen API (OpenAI 兼容模式)"""
+        """调用 Qwen API (OpenAI 兼容模式，支持 Thinking 深度思考)"""
         if not self.client:
             self.last_error = "未配置 Qwen API Key，请在 Streamlit Secrets 中设置 QWEN_API_KEY"
             return None
@@ -85,16 +86,35 @@ class AIAnalyzer:
         self.last_error = None
 
         try:
-            response = self.client.chat.completions.create(
-                model=QWEN_MODEL,
-                messages=[
-                    {"role": "system", "content": "你是一位专业的价值投资分析师，擅长分析股票基本面和估值。"},
+            # 构建请求参数
+            request_params = {
+                "model": QWEN_MODEL,
+                "messages": [
+                    {"role": "system", "content": "你是一位专业的价值投资分析师，擅长分析股票基本面和估值。请进行深入分析，给出全面、专业的投资建议。"},
                     {"role": "user", "content": prompt}
-                ],
-                temperature=0.7,
-                max_tokens=4096
-            )
-            return response.choices[0].message.content
+                ]
+            }
+
+            # 开启 Thinking 模式时的特殊配置
+            if ENABLE_THINKING:
+                request_params["extra_body"] = {"enable_thinking": True}
+                # Thinking 模式下需要更大的 token 限制
+                request_params["max_tokens"] = 16000
+            else:
+                request_params["temperature"] = 0.7
+                request_params["max_tokens"] = 4096
+
+            response = self.client.chat.completions.create(**request_params)
+
+            # 获取回复内容
+            message = response.choices[0].message
+            content = message.content
+
+            # 如果有 thinking 内容，可以在日志中输出（用于调试）
+            if hasattr(message, 'reasoning_content') and message.reasoning_content:
+                print(f"[Thinking] 思考过程: {len(message.reasoning_content)} 字符")
+
+            return content
 
         except Exception as e:
             error_str = str(e)
