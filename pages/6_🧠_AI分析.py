@@ -198,6 +198,11 @@ with col1:
             )
             if default_display and not st.session_state.ai_input_code:
                 selected_code = stock_options[selected_display] if selected_display else None
+            if selected_display:
+                if st.button("🚀 生成 AI 分析报告", type="primary", use_container_width=True):
+                    st.session_state.auto_generate_report_code = stock_options[selected_display]
+                    st.session_state.selected_report_code = stock_options[selected_display]
+                    st.rerun()
         else:
             st.info("股票池为空，请先添加股票或直接输入代码")
             selected_code = selected_report_code
