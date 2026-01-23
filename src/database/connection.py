@@ -1,7 +1,8 @@
 """Database connection management."""
 import os
 import sys
-from sqlalchemy import create_engine
+import sqlite3
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from .models import Base
 
@@ -49,7 +50,65 @@ def get_session() -> Session:
     return _SessionLocal()
 
 
+def run_migrations(db_path: str):
+    """Run database migrations to add missing columns and tables."""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Migration 1: Add new columns to stock_candidates table
+    cursor.execute("PRAGMA table_info(stock_candidates)")
+    existing_columns = {row[1] for row in cursor.fetchall()}
+
+    stock_candidate_migrations = [
+        ('recommended_add_pb', 'REAL'),
+        ('recommended_sell_pb', 'REAL'),
+        ('ai_score', 'INTEGER'),
+        ('ai_suggestion', 'TEXT'),
+    ]
+
+    for col_name, col_type in stock_candidate_migrations:
+        if col_name not in existing_columns:
+            try:
+                cursor.execute(f'ALTER TABLE stock_candidates ADD COLUMN {col_name} {col_type}')
+                print(f'Migration: Added column {col_name} to stock_candidates')
+            except Exception as e:
+                print(f'Migration warning: {e}')
+
+    # Migration 2: Create ai_analysis_reports table if not exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_analysis_reports'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS ai_analysis_reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                code VARCHAR(20) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                summary TEXT,
+                valuation_analysis TEXT,
+                fundamental_analysis TEXT,
+                risk_analysis TEXT,
+                investment_suggestion TEXT,
+                pb_recommendation TEXT,
+                full_report TEXT,
+                ai_score INTEGER,
+                price_at_report REAL,
+                pb_at_report REAL,
+                pe_at_report REAL,
+                market_cap_at_report REAL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS ix_ai_analysis_reports_code ON ai_analysis_reports(code)')
+        print('Migration: Created ai_analysis_reports table')
+
+    conn.commit()
+    conn.close()
+
+
 def init_db():
     """Initialize database tables."""
     engine = get_engine()
     Base.metadata.create_all(engine)
+
+    # Run migrations to add any missing columns/tables
+    run_migrations(DB_PATH)
