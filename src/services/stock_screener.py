@@ -178,11 +178,11 @@ class StockScreener:
 
         # 计算分位数 - 与 stock_analyzer.py 保持一致
         percentile_10 = sorted_pbs[int(n * 0.10)]
-        percentile_25 = sorted_pbs[int(n * 0.25)]
+        percentile_15 = sorted_pbs[int(n * 0.15)]
         percentile_75 = sorted_pbs[int(n * 0.75)]
 
         # 推荐阈值 - 与 stock_analyzer.py 保持一致
-        recommended_buy_pb = round(percentile_25, 2)   # 请客价: 25%分位
+        recommended_buy_pb = round(percentile_15, 2)   # 请客价: 15%分位 (更严格)
         recommended_add_pb = round(percentile_10, 2)   # 加仓价: 10%分位
         recommended_sell_pb = round(percentile_75, 2)  # 退出价: 75%分位
 
@@ -195,7 +195,7 @@ class StockScreener:
             'recommended_add_pb': recommended_add_pb,
             'recommended_sell_pb': recommended_sell_pb,
             'percentile_10': round(percentile_10, 2),
-            'percentile_25': round(percentile_25, 2),
+            'percentile_15': round(percentile_15, 2),
             'percentile_75': round(percentile_75, 2)
         }
 

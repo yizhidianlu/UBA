@@ -73,7 +73,7 @@ st.markdown("""
     <strong>💡 功能说明</strong><br>
     后台扫描器会按顺序分析A股所有股票，将符合条件的股票自动加入备选池。<br>
     <strong>🤖 AI评分：</strong>扫描器会自动为每只符合条件的股票进行AI评分，无需手动操作。<br>
-    扫描间隔可调整，建议120秒以上避免触发API限制。
+    扫描间隔已固定为10秒/只股票。
 </div>
 """, unsafe_allow_html=True)
 
@@ -95,15 +95,8 @@ with col1:
         help="PB距离请客价的百分比阈值"
     )
 
-    bg_interval = st.slider(
-        "扫描间隔 (秒)",
-        min_value=60,
-        max_value=300,
-        value=120,
-        step=30,
-        key="bg_interval",
-        help="每只股票分析间隔，建议120秒以上避免API限制"
-    )
+    bg_interval = 10  # 固定扫描间隔为10秒
+    st.info("⏱️ 扫描间隔: 10秒/只股票")
 
 with col2:
     st.markdown("#### 📊 扫描状态")

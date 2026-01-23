@@ -20,7 +20,7 @@ tab1, tab2, tab3 = st.tabs(["待处理", "已处理", "已忽略"])
 with tab1:
     open_signals = signal_engine.get_signals_by_status(SignalStatus.OPEN)
 
-    # 过滤：只显示能力圈评分 >= 4 的股票
+    # 过滤：只显示关注指数评分 >= 4 的股票
     filtered_signals = []
     for signal in open_signals:
         asset = session.query(Asset).filter(Asset.id == signal.asset_id).first()
@@ -30,10 +30,10 @@ with tab1:
     if filtered_signals:
         # 显示过滤提示
         if len(filtered_signals) < len(open_signals):
-            st.caption(f"💡 仅显示能力圈评分 ≥ 4⭐ 的股票信号 ({len(filtered_signals)}/{len(open_signals)})")
+            st.caption(f"💡 仅显示关注指数评分 ≥ 4⭐ 的股票信号 ({len(filtered_signals)}/{len(open_signals)})")
 
         for signal, asset in filtered_signals:
-            with st.expander(f"🔔 {asset.name} ({asset.code}) - {signal.signal_type.value} | 能力圈: {'⭐' * asset.competence_score}", expanded=True):
+            with st.expander(f"🔔 {asset.name} ({asset.code}) - {signal.signal_type.value} | 关注指数: {'⭐' * asset.competence_score}", expanded=True):
                 # Signal info
                 col1, col2 = st.columns([2, 1])
 
@@ -173,7 +173,7 @@ with tab1:
                                 st.error(f"操作失败: {e}")
     else:
         if open_signals:
-            st.info(f"有 {len(open_signals)} 个信号，但均为能力圈评分 < 4⭐ 的股票，已过滤")
+            st.info(f"有 {len(open_signals)} 个信号，但均为关注指数评分 < 4⭐ 的股票，已过滤")
         else:
             st.info("暂无待处理信号")
 

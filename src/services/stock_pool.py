@@ -141,7 +141,7 @@ class StockPoolService:
         return self.session.query(Asset).filter(Asset.market == market).all()
 
     def get_stocks_by_competence(self, min_score: int = 4) -> List[Asset]:
-        """获取高能力圈评分的股票"""
+        """获取高关注指数的股票"""
         return self.session.query(Asset).filter(Asset.competence_score >= min_score).all()
 
     def search_stocks(self, keyword: str) -> List[Asset]:

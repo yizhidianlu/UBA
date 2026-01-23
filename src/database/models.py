@@ -47,7 +47,7 @@ class Asset(Base):
     market = Column(SQLEnum(Market), nullable=False)
     industry = Column(String(100))
     tags = Column(String(500))  # comma-separated tags
-    competence_score = Column(Integer, default=3)  # 1-5, 能力圈评分
+    competence_score = Column(Integer, default=3)  # 1-5, 关注指数
     ai_score = Column(Integer)  # 1-5, AI投资评分
     ai_suggestion = Column(Text)  # AI投资建议摘要
     notes = Column(Text)  # 护城河/理解要点

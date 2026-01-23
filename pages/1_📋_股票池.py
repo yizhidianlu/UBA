@@ -18,7 +18,7 @@ st.set_page_config(
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 
 # Header
-st.markdown(render_header("股票池管理", "添加、编辑和管理您的能力圈股票", "📋"), unsafe_allow_html=True)
+st.markdown(render_header("股票池管理", "添加、编辑和管理您的关注指数股票", "📋"), unsafe_allow_html=True)
 
 col1, col2 = st.columns([4, 1])
 with col2:
@@ -172,7 +172,7 @@ if st.session_state.analysis_result:
 
                 st.info(f"""
                 **💡 推荐阈值** (基于历史分位数)
-                - 请客价 (25%分位): **{pb_analysis.recommended_buy_pb}**
+                - 请客价 (15%分位): **{pb_analysis.recommended_buy_pb}**
                 - 加仓价 (10%分位): **{pb_analysis.recommended_add_pb}**
                 - 退出价 (75%分位): **{pb_analysis.recommended_sell_pb}**
                 """)
@@ -195,7 +195,7 @@ if st.session_state.analysis_result:
                 form_industry = st.text_input("行业", value=stock_info.industry or "")
 
             with col2:
-                form_competence = st.slider("能力圈评分", 1, 5, 3)
+                form_competence = st.slider("关注指数评分", 1, 5, 3)
                 default_buy = pb_analysis.recommended_buy_pb if pb_analysis else 1.5
                 default_add = pb_analysis.recommended_add_pb if pb_analysis else 0.0
                 default_sell = pb_analysis.recommended_sell_pb if pb_analysis else 0.0
@@ -293,7 +293,7 @@ if stocks:
             "实时PB": f"{current_pb:.2f}" if current_pb else "-",
             "请客价": f"{buy_pb:.2f}" if buy_pb else "-",
             "距离": distance_str,
-            "能力圈": "⭐" * stock.competence_score,
+            "关注指数": "⭐" * stock.competence_score,
             "AI评分": ("🤖" + "⭐" * stock.ai_score) if stock.ai_score else "-"
         })
 
@@ -328,7 +328,7 @@ if stocks:
                 # 评分编辑
                 st.markdown("**评分设置**")
                 new_competence = st.slider(
-                    "能力圈评分",
+                    "关注指数评分",
                     min_value=1,
                     max_value=5,
                     value=stock.competence_score,

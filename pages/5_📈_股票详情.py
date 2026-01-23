@@ -37,7 +37,7 @@ if selected_code:
         with col1:
             st.header(f"{asset.name} ({asset.code})")
             st.markdown(f"**市场:** {asset.market.value} | **行业:** {asset.industry or '未设置'}")
-            st.markdown(f"**能力圈评分:** {'⭐' * asset.competence_score}")
+            st.markdown(f"**关注指数评分:** {'⭐' * asset.competence_score}")
 
         with col2:
             if asset.threshold:

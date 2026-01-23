@@ -32,7 +32,7 @@ class PBAnalysis:
     max_pb: float
     avg_pb: float
     median_pb: float
-    percentile_25: float
+    percentile_15: float
     percentile_10: float
     data_count: int
     data_years: float
@@ -283,12 +283,12 @@ class StockAnalyzer:
         median_pb = sorted_pbs[n // 2]
 
         percentile_10 = sorted_pbs[int(n * 0.10)]
-        percentile_25 = sorted_pbs[int(n * 0.25)]
+        percentile_15 = sorted_pbs[int(n * 0.15)]
         percentile_75 = sorted_pbs[int(n * 0.75)]
 
-        recommended_buy_pb = round(percentile_25, 2)
-        recommended_add_pb = round(percentile_10, 2)
-        recommended_sell_pb = round(percentile_75, 2)
+        recommended_buy_pb = round(percentile_15, 2)  # 请客价: 15%分位 (更严格)
+        recommended_add_pb = round(percentile_10, 2)  # 加仓价: 10%分位
+        recommended_sell_pb = round(percentile_75, 2) # 退出价: 75%分位
 
         current_pb = pb_data[0]['pb'] if pb_data and pb_data[0].get('pb') else None
 
@@ -310,7 +310,7 @@ class StockAnalyzer:
             max_pb=round(max_pb, 2),
             avg_pb=round(avg_pb, 2),
             median_pb=round(median_pb, 2),
-            percentile_25=round(percentile_25, 2),
+            percentile_15=round(percentile_15, 2),
             percentile_10=round(percentile_10, 2),
             data_count=len(pb_values),
             data_years=data_years,
