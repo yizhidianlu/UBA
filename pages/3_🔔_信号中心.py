@@ -20,13 +20,20 @@ tab1, tab2, tab3 = st.tabs(["待处理", "已处理", "已忽略"])
 with tab1:
     open_signals = signal_engine.get_signals_by_status(SignalStatus.OPEN)
 
-    if open_signals:
-        for signal in open_signals:
-            asset = session.query(Asset).filter(Asset.id == signal.asset_id).first()
-            if not asset:
-                continue
+    # 过滤：只显示能力圈评分 >= 4 的股票
+    filtered_signals = []
+    for signal in open_signals:
+        asset = session.query(Asset).filter(Asset.id == signal.asset_id).first()
+        if asset and asset.competence_score and asset.competence_score >= 4:
+            filtered_signals.append((signal, asset))
 
-            with st.expander(f"🔔 {asset.name} ({asset.code}) - {signal.signal_type.value}", expanded=True):
+    if filtered_signals:
+        # 显示过滤提示
+        if len(filtered_signals) < len(open_signals):
+            st.caption(f"💡 仅显示能力圈评分 ≥ 4⭐ 的股票信号 ({len(filtered_signals)}/{len(open_signals)})")
+
+        for signal, asset in filtered_signals:
+            with st.expander(f"🔔 {asset.name} ({asset.code}) - {signal.signal_type.value} | 能力圈: {'⭐' * asset.competence_score}", expanded=True):
                 # Signal info
                 col1, col2 = st.columns([2, 1])
 
@@ -165,13 +172,22 @@ with tab1:
                             except Exception as e:
                                 st.error(f"操作失败: {e}")
     else:
-        st.info("暂无待处理信号")
+        if open_signals:
+            st.info(f"有 {len(open_signals)} 个信号，但均为能力圈评分 < 4⭐ 的股票，已过滤")
+        else:
+            st.info("暂无待处理信号")
 
         if st.button("🔄 扫描新信号"):
             with st.spinner("正在扫描..."):
                 new_signals = signal_engine.scan_all_stocks()
                 if new_signals:
-                    st.success(f"发现 {len(new_signals)} 个新信号!")
+                    # 统计高评分信号数量
+                    high_score_count = 0
+                    for sig in new_signals:
+                        a = session.query(Asset).filter(Asset.id == sig.asset_id).first()
+                        if a and a.competence_score and a.competence_score >= 4:
+                            high_score_count += 1
+                    st.success(f"发现 {len(new_signals)} 个新信号，其中 {high_score_count} 个来自高评分股票!")
                     st.rerun()
                 else:
                     st.info("未发现新信号")
