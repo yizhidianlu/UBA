@@ -475,6 +475,8 @@ class BackgroundScanner:
                             status=CandidateStatus.PENDING
                         )
                         db_session.add(candidate)
+                        if self._enable_ai_scoring:
+                            self.ensure_ai_scoring_running()
 
                 # 更新进度
                 progress.current_index = i + 1
@@ -530,7 +532,16 @@ class BackgroundScanner:
             query = db_session.query(StockCandidate)
             if status:
                 query = query.filter(StockCandidate.status == status)
-            return query.order_by(StockCandidate.pb_distance_pct).all()
+            candidates = query.order_by(StockCandidate.pb_distance_pct).all()
+            if self._enable_ai_scoring and (status is None or status == CandidateStatus.PENDING):
+                has_unscored = any(
+                    candidate.ai_score in (None, 0)
+                    for candidate in candidates
+                    if candidate.status == CandidateStatus.PENDING
+                )
+                if has_unscored:
+                    self.ensure_ai_scoring_running()
+            return candidates
         finally:
             db_session.close()
 
@@ -561,6 +572,14 @@ class BackgroundScanner:
             db_session.close()
 
     # ==================== 独立AI评分线程 ====================
+
+    def ensure_ai_scoring_running(self, interval: int = 30) -> bool:
+        """确保AI评分线程在运行"""
+        if not self._enable_ai_scoring:
+            return False
+        if self.is_ai_scoring_running():
+            return True
+        return self.start_ai_scoring(interval=interval)
 
     def start_ai_scoring(self, interval: int = 30):
         """启动独立的AI评分线程"""
