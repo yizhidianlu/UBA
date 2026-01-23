@@ -155,7 +155,10 @@ if candidates:
         distance_icon = "🟢" if c.pb_distance_pct <= 0 else "🟡" if c.pb_distance_pct <= 10 else "🟠"
 
         # AI 评分显示
-        ai_score_display = f"{'⭐' * c.ai_score} ({c.ai_score})" if c.ai_score else "未评分"
+        if c.ai_score and c.ai_score > 0:
+            ai_score_display = f"{'⭐' * c.ai_score} ({c.ai_score})"
+        else:
+            ai_score_display = "未评分"
 
         candidate_data.append({
             "状态": "✅ 已加入" if in_pool else "⬜ 待处理",
