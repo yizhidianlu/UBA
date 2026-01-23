@@ -38,6 +38,10 @@ class BackgroundScanner:
         self._cached_stocks: Optional[List[dict]] = None
         self._enable_ai_scoring = enable_ai_scoring
         self._ai_analyzer: Optional[AIAnalyzer] = None
+        # AI评分独立线程
+        self._ai_stop_event = threading.Event()
+        self._ai_thread: Optional[threading.Thread] = None
+        self._ai_scoring_interval = 30  # AI评分间隔(秒)
 
     def _get_ai_analyzer(self) -> Optional[AIAnalyzer]:
         """获取 AI 分析器实例（延迟初始化）"""
@@ -555,6 +559,80 @@ class BackgroundScanner:
             db_session.commit()
         finally:
             db_session.close()
+
+    # ==================== 独立AI评分线程 ====================
+
+    def start_ai_scoring(self, interval: int = 30):
+        """启动独立的AI评分线程"""
+        if self._ai_thread and self._ai_thread.is_alive():
+            print("AI评分线程已在运行中")
+            return False
+
+        self._ai_stop_event.clear()
+        self._ai_scoring_interval = interval
+        self._ai_thread = threading.Thread(
+            target=self._ai_scoring_loop,
+            daemon=True
+        )
+        self._ai_thread.start()
+        print("AI评分线程已启动")
+        return True
+
+    def stop_ai_scoring(self):
+        """停止AI评分线程"""
+        self._ai_stop_event.set()
+        if self._ai_thread:
+            self._ai_thread.join(timeout=5)
+        print("AI评分线程已停止")
+
+    def is_ai_scoring_running(self) -> bool:
+        """检查AI评分线程是否在运行"""
+        return self._ai_thread is not None and self._ai_thread.is_alive()
+
+    def _ai_scoring_loop(self):
+        """AI评分主循环 - 按添加时间从早到晚依次评分"""
+        init_db()
+
+        while not self._ai_stop_event.is_set():
+            db_session = get_session()
+            try:
+                # 查找未评分的备选股票，按添加时间从早到晚排序
+                unscored = db_session.query(StockCandidate).filter(
+                    StockCandidate.status == CandidateStatus.PENDING,
+                    (StockCandidate.ai_score == None) | (StockCandidate.ai_score == 0)
+                ).order_by(StockCandidate.scanned_at.asc()).first()
+
+                if unscored:
+                    print(f"[AI评分] 正在评分: {unscored.name} ({unscored.code})")
+
+                    # 获取AI评分
+                    ai_result = self.get_ai_score(unscored.code, unscored.name)
+
+                    if ai_result:
+                        unscored.ai_score = ai_result['ai_score']
+                        unscored.ai_suggestion = ai_result['ai_suggestion']
+                        unscored.updated_at = datetime.now()
+                        db_session.commit()
+                        print(f"[AI评分] {unscored.name} 评分完成: {ai_result['ai_score']}分")
+                    else:
+                        # 标记为已尝试评分（设为-1表示评分失败）
+                        unscored.ai_score = -1
+                        unscored.updated_at = datetime.now()
+                        db_session.commit()
+                        print(f"[AI评分] {unscored.name} 评分失败")
+
+            except Exception as e:
+                print(f"[AI评分] 评分出错: {e}")
+            finally:
+                db_session.close()
+
+            # 等待间隔
+            for _ in range(self._ai_scoring_interval):
+                if self._ai_stop_event.is_set():
+                    break
+                time.sleep(1)
+
+        print("[AI评分] 线程已退出")
 
 
 # 全局扫描器实例

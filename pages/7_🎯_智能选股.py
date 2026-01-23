@@ -148,6 +148,42 @@ with col3:
     if st.button("🔄 刷新状态", use_container_width=True):
         st.rerun()
 
+# AI评分独立控制
+st.divider()
+st.markdown("### 🤖 AI评分线程")
+st.caption("💡 AI评分与扫描异步运行，按添加时间从早到晚依次评分")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    ai_running = scanner.is_ai_scoring_running()
+    if ai_running:
+        st.markdown("""
+        <div style="background: #E8F5E9; padding: 0.5rem; border-radius: 8px; text-align: center;">
+            <strong>🟢 AI评分运行中</strong>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background: #FFF3E0; padding: 0.5rem; border-radius: 8px; text-align: center;">
+            <strong>⏸️ AI评分已停止</strong>
+        </div>
+        """, unsafe_allow_html=True)
+
+with col2:
+    if st.button("🤖 启动AI评分", type="primary", use_container_width=True):
+        if scanner.start_ai_scoring(interval=30):
+            st.success("✅ AI评分线程已启动！")
+            st.rerun()
+        else:
+            st.warning("AI评分已在运行中")
+
+with col3:
+    if st.button("⏹️ 停止AI评分", use_container_width=True):
+        scanner.stop_ai_scoring()
+        st.info("AI评分已停止")
+        st.rerun()
+
 st.divider()
 
 # ==================== Candidate Pool ====================
