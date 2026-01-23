@@ -33,6 +33,8 @@ if 'fundamental_data' not in st.session_state:
     st.session_state.fundamental_data = None
 if 'show_history' not in st.session_state:
     st.session_state.show_history = True
+if 'selected_report_code' not in st.session_state:
+    st.session_state.selected_report_code = None
 
 st.divider()
 
@@ -140,15 +142,25 @@ with col1:
     st.markdown("### 📊 选择分析对象")
 
     stocks = stock_service.get_all_stocks()
+    selected_report_code = st.session_state.selected_report_code
 
     tab1, tab2 = st.tabs(["从股票池选择", "输入股票代码"])
 
     with tab1:
         if stocks:
             stock_options = {f"{s.name} ({s.code})": s.code for s in stocks}
+            default_display = None
+            if selected_report_code:
+                for display, code in stock_options.items():
+                    if code == selected_report_code:
+                        default_display = display
+                        break
+            option_list = list(stock_options.keys())
+            default_index = option_list.index(default_display) if default_display in option_list else 0
             selected_display = st.selectbox(
                 "选择股票",
-                options=list(stock_options.keys()),
+                options=option_list,
+                index=default_index,
                 help="从已添加的股票池中选择"
             )
             selected_code = stock_options[selected_display] if selected_display else None
@@ -159,11 +171,15 @@ with col1:
     with tab2:
         input_code = st.text_input(
             "股票代码",
+            value=selected_report_code or "",
             placeholder="输入股票代码，如 600519",
             help="支持A股代码"
         )
         if input_code:
             selected_code = input_code
+
+    if selected_code:
+        st.session_state.selected_report_code = selected_code
 
 with col2:
     st.markdown("### ⚙️ 分析选项")
