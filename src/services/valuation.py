@@ -4,6 +4,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import pandas as pd
+import threading
 
 from ..database.models import Asset, Valuation
 
@@ -14,71 +15,89 @@ class ValuationService:
     def __init__(self, session: Session):
         self.session = session
 
-    def fetch_pb_data(self, code: str, start_date: Optional[date] = None) -> List[dict]:
+    _pb_fetch_lock = threading.Lock()
+
+    def fetch_pb_data(
+        self,
+        code: str,
+        start_date: Optional[date] = None,
+        allow_wait: bool = True
+    ) -> Optional[List[dict]]:
         """
         从数据源获取PB数据
         使用akshare获取A股/港股数据
         """
+        if allow_wait:
+            acquired = self._pb_fetch_lock.acquire()
+        else:
+            acquired = self._pb_fetch_lock.acquire(blocking=False)
+        if not acquired:
+            print("PB数据获取正在进行，已跳过重复请求")
+            return None
+
         try:
-            import akshare as ak
-        except ImportError:
-            raise ImportError("请安装akshare: pip install akshare")
-
-        if start_date is None:
-            start_date = date.today() - timedelta(days=365 * 5)  # 默认5年
-
-        data_list = []
-
-        # Parse code to determine market
-        if code.endswith('.SH') or code.endswith('.SZ'):
-            # A股
-            symbol = code.split('.')[0]
             try:
-                # 尝试获取个股指标数据
-                df = ak.stock_a_lg_indicator(symbol=symbol)
-                if df is not None and not df.empty:
-                    df = df[df['trade_date'] >= start_date.strftime('%Y-%m-%d')]
-                    for _, row in df.iterrows():
-                        data_list.append({
-                            'date': pd.to_datetime(row['trade_date']).date(),
-                            'pb': float(row['pb']) if pd.notna(row.get('pb')) else None,
-                            'price': float(row['total_mv']) / 10000 if pd.notna(row.get('total_mv')) else None,
-                        })
-            except Exception as e:
-                print(f"获取A股数据失败 {code}: {e}")
-                # 尝试备用方法
+                import akshare as ak
+            except ImportError:
+                raise ImportError("请安装akshare: pip install akshare")
+
+            if start_date is None:
+                start_date = date.today() - timedelta(days=365 * 5)  # 默认5年
+
+            data_list = []
+
+            # Parse code to determine market
+            if code.endswith('.SH') or code.endswith('.SZ'):
+                # A股
+                symbol = code.split('.')[0]
                 try:
-                    df = ak.stock_zh_a_hist(symbol=symbol, period="daily",
-                                           start_date=start_date.strftime('%Y%m%d'),
-                                           adjust="qfq")
+                    # 尝试获取个股指标数据
+                    df = ak.stock_a_lg_indicator(symbol=symbol)
+                    if df is not None and not df.empty:
+                        df = df[df['trade_date'] >= start_date.strftime('%Y-%m-%d')]
+                        for _, row in df.iterrows():
+                            data_list.append({
+                                'date': pd.to_datetime(row['trade_date']).date(),
+                                'pb': float(row['pb']) if pd.notna(row.get('pb')) else None,
+                                'price': float(row['total_mv']) / 10000 if pd.notna(row.get('total_mv')) else None,
+                            })
+                except Exception as e:
+                    print(f"获取A股数据失败 {code}: {e}")
+                    # 尝试备用方法
+                    try:
+                        df = ak.stock_zh_a_hist(symbol=symbol, period="daily",
+                                               start_date=start_date.strftime('%Y%m%d'),
+                                               adjust="qfq")
+                        if df is not None and not df.empty:
+                            for _, row in df.iterrows():
+                                data_list.append({
+                                    'date': pd.to_datetime(row['日期']).date(),
+                                    'pb': None,  # 此接口无PB数据
+                                    'price': float(row['收盘']),
+                                })
+                    except Exception as e2:
+                        print(f"备用方法也失败 {code}: {e2}")
+
+            elif code.endswith('.HK'):
+                # 港股
+                symbol = code.replace('.HK', '')
+                try:
+                    df = ak.stock_hk_hist(symbol=symbol, period="daily",
+                                         start_date=start_date.strftime('%Y%m%d'),
+                                         adjust="qfq")
                     if df is not None and not df.empty:
                         for _, row in df.iterrows():
                             data_list.append({
                                 'date': pd.to_datetime(row['日期']).date(),
-                                'pb': None,  # 此接口无PB数据
+                                'pb': None,  # 港股历史PB需要其他数据源
                                 'price': float(row['收盘']),
                             })
-                except Exception as e2:
-                    print(f"备用方法也失败 {code}: {e2}")
+                except Exception as e:
+                    print(f"获取港股数据失败 {code}: {e}")
 
-        elif code.endswith('.HK'):
-            # 港股
-            symbol = code.replace('.HK', '')
-            try:
-                df = ak.stock_hk_hist(symbol=symbol, period="daily",
-                                     start_date=start_date.strftime('%Y%m%d'),
-                                     adjust="qfq")
-                if df is not None and not df.empty:
-                    for _, row in df.iterrows():
-                        data_list.append({
-                            'date': pd.to_datetime(row['日期']).date(),
-                            'pb': None,  # 港股历史PB需要其他数据源
-                            'price': float(row['收盘']),
-                        })
-            except Exception as e:
-                print(f"获取港股数据失败 {code}: {e}")
-
-        return data_list
+            return data_list
+        finally:
+            self._pb_fetch_lock.release()
 
     def save_valuation(
         self,
@@ -140,8 +159,11 @@ class ValuationService:
         for asset in assets:
             try:
                 data_list = self.fetch_pb_data(asset.code)
-                count = self.batch_save_valuations(asset.id, data_list)
-                results['success'].append({'code': asset.code, 'count': count})
+                if data_list is None:
+                    results['failed'].append({'code': asset.code, 'error': 'PB数据获取正在进行'})
+                else:
+                    count = self.batch_save_valuations(asset.id, data_list)
+                    results['success'].append({'code': asset.code, 'count': count})
             except Exception as e:
                 results['failed'].append({'code': asset.code, 'error': str(e)})
 

@@ -7,6 +7,12 @@ from src.database import get_session
 from src.database.models import Asset, Signal, Action
 from src.services import StockPoolService, ValuationService
 
+try:
+    from src.services.background_scanner import get_scanner
+    SCANNER_AVAILABLE = True
+except ImportError:
+    SCANNER_AVAILABLE = False
+
 st.set_page_config(page_title="股票详情 - 不败之地", page_icon="📈", layout="wide")
 st.title("📈 股票详情")
 
@@ -79,17 +85,27 @@ if selected_code:
 
             valuations = valuation_service.get_pb_history(asset.id, start_date=start_date)
             auto_fetch_key = f"pb_autofetch_{asset.code}_{time_range}"
+            scan_running = False
+            if SCANNER_AVAILABLE:
+                scanner = get_scanner()
+                scan_running = scanner.is_running()
 
-            if not valuations and not st.session_state.get(auto_fetch_key):
-                st.session_state[auto_fetch_key] = True
+            if scan_running and not valuations:
+                st.info("扫描进行中，PB历史数据获取已暂缓")
+
+            if not valuations and not scan_running and not st.session_state.get(auto_fetch_key):
                 with st.spinner("正在获取PB历史数据..."):
                     try:
-                        data_list = valuation_service.fetch_pb_data(asset.code)
-                        if data_list:
-                            valuation_service.batch_save_valuations(asset.id, data_list)
-                            valuations = valuation_service.get_pb_history(asset.id, start_date=start_date)
+                        data_list = valuation_service.fetch_pb_data(asset.code, allow_wait=False)
+                        if data_list is None:
+                            st.info("PB数据获取任务进行中，稍后自动显示")
                         else:
-                            st.warning("未能获取PB历史数据，请稍后重试")
+                            st.session_state[auto_fetch_key] = True
+                            if data_list:
+                                valuation_service.batch_save_valuations(asset.id, data_list)
+                                valuations = valuation_service.get_pb_history(asset.id, start_date=start_date)
+                            else:
+                                st.warning("未能获取PB历史数据，请稍后重试")
                     except Exception as e:
                         st.error(f"获取PB历史数据失败: {e}")
 
@@ -154,14 +170,16 @@ if selected_code:
             else:
                 st.info("暂无PB历史数据")
 
-                if st.button("📥 获取历史数据"):
+                if st.button("📥 获取历史数据", disabled=scan_running):
                     with st.spinner("正在获取数据..."):
                         try:
-                            data_list = valuation_service.fetch_pb_data(asset.code)
+                            data_list = valuation_service.fetch_pb_data(asset.code, allow_wait=True)
                             if data_list:
                                 count = valuation_service.batch_save_valuations(asset.id, data_list)
                                 st.success(f"成功获取 {count} 条数据")
                                 st.rerun()
+                            elif data_list is None:
+                                st.info("PB数据获取任务进行中，请稍后再试")
                             else:
                                 st.warning("未能获取数据，请检查股票代码或稍后重试")
                         except Exception as e:
