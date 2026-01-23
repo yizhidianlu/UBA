@@ -92,7 +92,6 @@ with col1:
         "距请客价最大距离 (%)",
         min_value=5,
         max_value=50,
-        value=st.session_state["bg_distance"],
         step=5,
         key="bg_distance",
         help="PB距离请客价的百分比阈值"
