@@ -162,11 +162,14 @@ with col1:
                         default_display = display
                         break
             option_list = list(stock_options.keys())
+            if default_display and st.session_state.get("ai_stock_select") != default_display:
+                st.session_state["ai_stock_select"] = default_display
             default_index = option_list.index(default_display) if default_display in option_list else 0
             selected_display = st.selectbox(
                 "选择股票",
                 options=option_list,
                 index=default_index,
+                key="ai_stock_select",
                 help="从已添加的股票池中选择"
             )
             if default_display:
