@@ -5,7 +5,7 @@ from datetime import datetime
 
 # Database imports
 from src.database import get_session, init_db
-from src.database.models import Market
+from src.database.models import Market, AIAnalysisReport
 
 # Import models for background scanning
 try:
@@ -21,6 +21,26 @@ except ImportError as e:
 
 from src.services import StockPoolService, AIAnalyzer
 from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer
+
+
+def sync_ai_report_to_database(session, code: str, name: str, ai_score: int, ai_suggestion: str):
+    """同步AI评分到AIAnalysisReport表"""
+    existing = session.query(AIAnalysisReport).filter(AIAnalysisReport.code == code).first()
+    if existing:
+        # 更新现有记录
+        existing.ai_score = ai_score
+        existing.summary = ai_suggestion
+        existing.updated_at = datetime.now()
+    else:
+        # 创建新记录（简化版，只保存评分和摘要）
+        new_report = AIAnalysisReport(
+            code=code,
+            name=name,
+            summary=ai_suggestion,
+            ai_score=ai_score
+        )
+        session.add(new_report)
+    session.commit()
 
 st.set_page_config(
     page_title=f"智能选股 - {APP_NAME_CN} | {APP_NAME_EN}",
@@ -52,7 +72,8 @@ st.markdown("""
 <div style="background: #E3F2FD; padding: 1rem; border-radius: 8px; margin-bottom: 1rem;">
     <strong>💡 功能说明</strong><br>
     后台扫描器会按顺序分析A股所有股票，将符合条件的股票自动加入备选池。<br>
-    扫描间隔可调整，避免触发API限制。
+    <strong>🤖 AI评分：</strong>扫描器会自动为每只符合条件的股票进行AI评分，无需手动操作。<br>
+    扫描间隔可调整，建议120秒以上避免触发API限制。
 </div>
 """, unsafe_allow_html=True)
 
@@ -213,12 +234,17 @@ if candidates:
                                 add_pb=add_pb,
                                 sell_pb=sell_pb
                             )
-                            # 同步 AI 评分
+                            # 同步 AI 评分到 Asset 表
                             if c.ai_score:
                                 stock_service.update_stock(
                                     c.code,
                                     ai_score=c.ai_score,
                                     ai_suggestion=c.ai_suggestion
+                                )
+                                # 同步 AI 评分到 AIAnalysisReport 表
+                                sync_ai_report_to_database(
+                                    session, c.code, c.name,
+                                    c.ai_score, c.ai_suggestion
                                 )
                             c.status = CandidateStatus.ADDED
                             success += 1
@@ -249,62 +275,31 @@ if candidates:
                 st.info("备选池已清空")
                 st.rerun()
 
-    # 手动更新 AI 评分
+    # AI 评分统计
     st.divider()
-    st.markdown("#### 🤖 AI 评分管理")
+    st.markdown("#### 🤖 AI 评分统计")
 
-    # 找出未评分的股票
+    scored_candidates = [c for c in available_candidates if c.ai_score and c.ai_score > 0]
     unscored_candidates = [c for c in available_candidates if not c.ai_score]
 
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
+
     with col1:
-        if unscored_candidates:
-            st.caption(f"有 {len(unscored_candidates)} 只股票未获取 AI 评分")
-            if st.button("🤖 为所有未评分股票获取AI评分", use_container_width=True):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                ai_analyzer = AIAnalyzer()
-
-                if ai_analyzer.last_error:
-                    st.error(ai_analyzer.last_error)
-                else:
-                    success_count = 0
-                    for idx, c in enumerate(unscored_candidates):
-                        progress_bar.progress((idx + 1) / len(unscored_candidates))
-                        status_text.text(f"正在分析 {c.name} ({idx + 1}/{len(unscored_candidates)})...")
-
-                        try:
-                            fundamental = ai_analyzer.fetch_fundamental_data(c.code)
-                            if fundamental:
-                                report = ai_analyzer.generate_analysis_report(fundamental)
-                                if report:
-                                    c.ai_score = report.ai_score
-                                    c.ai_suggestion = report.summary
-                                    c.updated_at = datetime.now()
-                                    success_count += 1
-                        except Exception as e:
-                            print(f"AI评分失败 {c.code}: {e}")
-
-                    session.commit()
-                    progress_bar.empty()
-                    status_text.empty()
-
-                    if success_count:
-                        st.success(f"✅ 成功为 {success_count} 只股票获取 AI 评分！")
-                        st.rerun()
-                    else:
-                        st.warning("未能获取任何评分")
-        else:
-            st.success("✅ 所有股票已完成 AI 评分")
+        st.metric("已评分", f"{len(scored_candidates)} 只")
 
     with col2:
-        # 显示 AI 评分统计
-        scored_count = len([c for c in available_candidates if c.ai_score])
-        if scored_count > 0:
-            avg_score = sum(c.ai_score for c in available_candidates if c.ai_score) / scored_count
-            high_score_count = len([c for c in available_candidates if c.ai_score and c.ai_score >= 4])
-            st.metric("平均 AI 评分", f"{avg_score:.1f} ⭐")
-            st.caption(f"4分以上: {high_score_count} 只")
+        if scored_candidates:
+            avg_score = sum(c.ai_score for c in scored_candidates) / len(scored_candidates)
+            st.metric("平均评分", f"{avg_score:.1f} ⭐")
+        else:
+            st.metric("平均评分", "-")
+
+    with col3:
+        high_score_count = len([c for c in scored_candidates if c.ai_score >= 4])
+        st.metric("高分(≥4)", f"{high_score_count} 只")
+
+    if unscored_candidates:
+        st.caption(f"💡 有 {len(unscored_candidates)} 只股票待评分，后台扫描时会自动进行AI评分")
 else:
     st.info("备选池为空，启动后台扫描后符合条件的股票会自动加入")
 
