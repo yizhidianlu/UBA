@@ -132,7 +132,7 @@ if not progress_info:
 
 # Control buttons
 st.divider()
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     is_running = scanner.is_running()
@@ -146,12 +146,19 @@ with col1:
         st.info("自动扫描已启用")
 
 with col2:
+    resume_enabled = bool(progress_info) and not is_running and progress_info.get('total_stocks') and progress_info.get('current_index', 0) > 0
+    if st.button("▶️ 恢复扫描", use_container_width=True, disabled=not resume_enabled):
+        if scanner.start_scan(pb_threshold_pct=float(bg_max_distance), scan_interval=bg_interval):
+            st.success("✅ 扫描已恢复")
+            st.rerun()
+
+with col3:
     if st.button("⏹️ 停止扫描", use_container_width=True):
         scanner.stop_scan()
         st.info("扫描已停止")
         st.rerun()
 
-with col3:
+with col4:
     if st.button("🔄 刷新状态", use_container_width=True):
         st.rerun()
 
