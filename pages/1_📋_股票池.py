@@ -303,7 +303,7 @@ if stocks:
             "请客价": f"{buy_pb:.2f}" if buy_pb else "-",
             "距离": distance_str,
             "关注指数": "⭐" * stock.competence_score,
-            "AI评分": ("🤖" + "⭐" * stock.ai_score) if stock.ai_score else "-"
+            "AI评分": (f"🤖 {stock.ai_score}分") if stock.ai_score else "-"
         })
 
     df = pd.DataFrame(data)
@@ -345,7 +345,7 @@ if stocks:
                     key="edit_competence"
                 )
 
-                ai_score_display = f"🤖 {'⭐' * stock.ai_score} ({stock.ai_score}分)" if stock.ai_score else "未评分"
+                ai_score_display = f"🤖 {stock.ai_score}分" if stock.ai_score else "未评分"
                 st.markdown(f"**AI评分:** {ai_score_display}")
                 if stock.ai_suggestion:
                     st.caption(f"AI建议: {stock.ai_suggestion[:100]}..." if len(stock.ai_suggestion or '') > 100 else f"AI建议: {stock.ai_suggestion}")

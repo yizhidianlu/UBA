@@ -235,7 +235,7 @@ if candidates:
 
         # AI 评分显示
         if c.ai_score and c.ai_score > 0:
-            ai_score_display = f"{'⭐' * c.ai_score} ({c.ai_score})"
+            ai_score_display = f"{c.ai_score}分"
         else:
             ai_score_display = "未评分"
 
@@ -349,13 +349,13 @@ if candidates:
     with col2:
         if scored_candidates:
             avg_score = sum(c.ai_score for c in scored_candidates) / len(scored_candidates)
-            st.metric("平均评分", f"{avg_score:.1f} ⭐")
+            st.metric("平均评分", f"{avg_score:.1f}分")
         else:
             st.metric("平均评分", "-")
 
     with col3:
-        high_score_count = len([c for c in scored_candidates if c.ai_score >= 4])
-        st.metric("高分(≥4)", f"{high_score_count} 只")
+        high_score_count = len([c for c in scored_candidates if c.ai_score >= 80])
+        st.metric("高分(≥80)", f"{high_score_count} 只")
 
     if unscored_candidates:
         st.caption(f"💡 有 {len(unscored_candidates)} 只股票待评分，后台扫描时会自动进行AI评分")

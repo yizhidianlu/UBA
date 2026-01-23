@@ -402,7 +402,7 @@ PB历史数据 (近5年):
 - 依据：历史分位/ROE中枢/周期位置/风险溢价（逐条说明）
 
 ## AI投资评分
-评分: X分
+评分: X分 (0-100)
 (用3-6条要点解释为什么是这个分数；若数据缺失导致不确定性，必须下调或标注)"""
 
         # 调用 Qwen3-max API
@@ -480,19 +480,19 @@ PB历史数据 (近5年):
             sections[current_section] = '\n'.join(current_content).strip()
 
         # 提取AI评分数字
-        ai_score = 3  # 默认3分
+        ai_score = 60  # 默认60分
         score_text = sections.get('ai_score', '')
         if score_text:
             # 尝试匹配 "评分: X分" 或 "X分" 或数字
-            match = re.search(r'(\d)[分/]', score_text)
+            match = re.search(r'(\d{1,3})\s*[分/]', score_text)
             if match:
                 ai_score = int(match.group(1))
             else:
-                match = re.search(r'[：:]\s*(\d)', score_text)
+                match = re.search(r'[：:]\s*(\d{1,3})', score_text)
                 if match:
                     ai_score = int(match.group(1))
-        # 确保在1-5范围内
-        ai_score = max(1, min(5, ai_score))
+        # 确保在0-100范围内
+        ai_score = max(0, min(100, ai_score))
 
         return AnalysisReport(
             code=fundamental.code,

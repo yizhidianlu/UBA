@@ -49,7 +49,7 @@ class Asset(Base):
     industry = Column(String(100))
     tags = Column(String(500))  # comma-separated tags
     competence_score = Column(Integer, default=3)  # 1-5, 关注指数
-    ai_score = Column(Integer)  # 1-5, AI投资评分
+    ai_score = Column(Integer)  # 0-100, AI投资评分
     ai_suggestion = Column(Text)  # AI投资建议摘要
     notes = Column(Text)  # 护城河/理解要点
     created_at = Column(DateTime, default=datetime.now)
@@ -203,7 +203,7 @@ class StockCandidate(Base):
     avg_pb = Column(Float)
     pe_ttm = Column(Float)
     market_cap = Column(Float)          # 市值(亿)
-    ai_score = Column(Integer)          # AI投资评分 1-5
+    ai_score = Column(Integer)          # AI投资评分 0-100
     ai_suggestion = Column(Text)        # AI投资建议摘要
     status = Column(SQLEnum(CandidateStatus), default=CandidateStatus.PENDING)
     scanned_at = Column(DateTime, default=datetime.now)
@@ -241,7 +241,7 @@ class AIAnalysisReport(Base):
     investment_suggestion = Column(Text)                    # 投资建议
     pb_recommendation = Column(Text)                        # PB阈值建议
     full_report = Column(Text)                              # 完整报告
-    ai_score = Column(Integer)                              # AI评分 1-5
+    ai_score = Column(Integer)                              # AI评分 0-100
     # 生成时的基本面数据快照
     price_at_report = Column(Float)                         # 报告时价格
     pb_at_report = Column(Float)                            # 报告时PB

@@ -302,7 +302,7 @@ if selected_code:
 
         with col2:
             if historical_report.ai_score:
-                st.metric("AI 评分", f"{'⭐' * historical_report.ai_score} ({historical_report.ai_score}分)")
+                st.metric("AI 评分", f"{historical_report.ai_score}分")
 
         with col3:
             if st.button("📝 生成完整报告", type="primary", use_container_width=True):
@@ -420,7 +420,7 @@ if all_reports:
 
         with col2:
             if report.ai_score and report.ai_score > 0:
-                st.markdown(f"{'⭐' * report.ai_score}")
+                st.markdown(f"{report.ai_score}分")
             else:
                 st.markdown("-")
 
