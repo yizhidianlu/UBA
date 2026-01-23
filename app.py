@@ -81,10 +81,12 @@ st.divider()
 
 # Triggered alerts
 st.markdown("### ⚡ 实时触发提醒")
+st.caption("💡 仅显示关注指数评分 ≥ 4⭐ 的股票")
 
 triggered_stocks = []
 for stock in stocks:
-    if not stock.threshold:
+    # 只显示关注指数评分 >= 4 的股票
+    if not stock.threshold or not stock.competence_score or stock.competence_score < 4:
         continue
 
     quote = realtime_data.get(stock.code)
