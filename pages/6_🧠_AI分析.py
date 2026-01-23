@@ -35,6 +35,8 @@ if 'show_history' not in st.session_state:
     st.session_state.show_history = True
 if 'selected_report_code' not in st.session_state:
     st.session_state.selected_report_code = None
+if 'auto_generate_report_code' not in st.session_state:
+    st.session_state.auto_generate_report_code = None
 
 st.divider()
 
@@ -177,6 +179,10 @@ with col1:
         )
         if input_code:
             selected_code = input_code
+            if st.button("🚀 生成 AI 分析报告", type="primary", use_container_width=True):
+                st.session_state.auto_generate_report_code = input_code
+                st.session_state.selected_report_code = input_code
+                st.rerun()
 
     if selected_code:
         st.session_state.selected_report_code = selected_code
@@ -188,7 +194,22 @@ with col2:
 st.divider()
 
 # ==================== Check Historical Report ====================
+auto_generate_code = st.session_state.auto_generate_report_code
+if auto_generate_code and auto_generate_code != selected_code:
+    selected_code = auto_generate_code
+    st.session_state.selected_report_code = auto_generate_code
+
 if selected_code:
+    if st.session_state.auto_generate_report_code:
+        st.session_state.auto_generate_report_code = None
+        with st.spinner("正在获取数据并生成分析报告，请稍候..."):
+            result, error = generate_new_report(selected_code, include_pb_history)
+            if result:
+                st.success("✅ 报告生成成功！")
+                st.rerun()
+            else:
+                st.error(error)
+
     historical_report = get_historical_report(selected_code)
 
     if historical_report:
