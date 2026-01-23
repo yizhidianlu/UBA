@@ -189,12 +189,16 @@ class StockCandidate(Base):
     current_price = Column(Float)
     current_pb = Column(Float)
     recommended_buy_pb = Column(Float)  # 推荐请客价
+    recommended_add_pb = Column(Float)  # 推荐加仓价
+    recommended_sell_pb = Column(Float) # 推荐退出价
     pb_distance_pct = Column(Float)     # 距离请客价百分比
     min_pb = Column(Float)
     max_pb = Column(Float)
     avg_pb = Column(Float)
     pe_ttm = Column(Float)
     market_cap = Column(Float)          # 市值(亿)
+    ai_score = Column(Integer)          # AI投资评分 1-5
+    ai_suggestion = Column(Text)        # AI投资建议摘要
     status = Column(SQLEnum(CandidateStatus), default=CandidateStatus.PENDING)
     scanned_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

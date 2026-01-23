@@ -164,7 +164,7 @@ class StockScreener:
         return pb_values
 
     def _analyze_pb(self, pb_values: List[float]) -> Optional[Dict]:
-        """分析PB数据并计算推荐阈值"""
+        """分析PB数据并计算推荐阈值 - 与 stock_analyzer.py 保持一致"""
         if len(pb_values) < 50:  # 至少需要50个数据点
             return None
 
@@ -174,15 +174,29 @@ class StockScreener:
         min_pb = sorted_pbs[0]
         max_pb = sorted_pbs[-1]
         avg_pb = sum(sorted_pbs) / n
+        median_pb = sorted_pbs[n // 2]
 
-        # 使用25%分位数作为推荐买入价
+        # 计算分位数 - 与 stock_analyzer.py 保持一致
+        percentile_10 = sorted_pbs[int(n * 0.10)]
         percentile_25 = sorted_pbs[int(n * 0.25)]
+        percentile_75 = sorted_pbs[int(n * 0.75)]
+
+        # 推荐阈值 - 与 stock_analyzer.py 保持一致
+        recommended_buy_pb = round(percentile_25, 2)   # 请客价: 25%分位
+        recommended_add_pb = round(percentile_10, 2)   # 加仓价: 10%分位
+        recommended_sell_pb = round(percentile_75, 2)  # 退出价: 75%分位
 
         return {
             'min_pb': round(min_pb, 2),
             'max_pb': round(max_pb, 2),
             'avg_pb': round(avg_pb, 2),
-            'recommended_buy_pb': round(percentile_25, 2)
+            'median_pb': round(median_pb, 2),
+            'recommended_buy_pb': recommended_buy_pb,
+            'recommended_add_pb': recommended_add_pb,
+            'recommended_sell_pb': recommended_sell_pb,
+            'percentile_10': round(percentile_10, 2),
+            'percentile_25': round(percentile_25, 2),
+            'percentile_75': round(percentile_75, 2)
         }
 
     def scan_stocks(self, max_distance_pct: float = 20.0, limit: int = 10,

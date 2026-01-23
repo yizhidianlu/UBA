@@ -1,4 +1,4 @@
-"""AI-powered fundamental analysis page using Gemini."""
+"""AI-powered fundamental analysis page using Qwen3-max."""
 import streamlit as st
 from datetime import datetime, date, timedelta
 from src.database import get_session
@@ -16,7 +16,7 @@ st.set_page_config(
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 
 # Header
-st.markdown(render_header("AI 基本面分析", "使用 Gemini AI 生成专业投资分析报告", "🧠"), unsafe_allow_html=True)
+st.markdown(render_header("AI 基本面分析", "使用 Qwen3-max 生成专业投资分析报告", "🧠"), unsafe_allow_html=True)
 
 # Initialize services
 session = get_session()

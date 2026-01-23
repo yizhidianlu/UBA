@@ -19,7 +19,7 @@ except ImportError as e:
     ScanProgress = None
     CandidateStatus = None
 
-from src.services import StockPoolService
+from src.services import StockPoolService, AIAnalyzer
 from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer
 
 st.set_page_config(
@@ -154,6 +154,9 @@ if candidates:
         in_pool = c.code in existing_stocks
         distance_icon = "🟢" if c.pb_distance_pct <= 0 else "🟡" if c.pb_distance_pct <= 10 else "🟠"
 
+        # AI 评分显示
+        ai_score_display = f"{'⭐' * c.ai_score} ({c.ai_score})" if c.ai_score else "未评分"
+
         candidate_data.append({
             "状态": "✅ 已加入" if in_pool else "⬜ 待处理",
             "距离": f"{distance_icon} {c.pb_distance_pct:+.1f}%",
@@ -163,6 +166,7 @@ if candidates:
             "现价": f"¥{c.current_price:.2f}" if c.current_price else "-",
             "当前PB": f"{c.current_pb:.2f}" if c.current_pb else "-",
             "请客价PB": f"{c.recommended_buy_pb:.2f}" if c.recommended_buy_pb else "-",
+            "AI评分": ai_score_display,
             "扫描时间": c.scanned_at.strftime("%m-%d %H:%M") if c.scanned_at else "-"
         })
 
@@ -191,7 +195,11 @@ if candidates:
                     c = next((x for x in available_candidates if x.code == code), None)
                     if c:
                         try:
-                            stock_service.add_stock(
+                            # 使用推荐的阈值
+                            add_pb = c.recommended_add_pb if c.recommended_add_pb else c.min_pb
+                            sell_pb = c.recommended_sell_pb if c.recommended_sell_pb else c.avg_pb
+
+                            asset = stock_service.add_stock(
                                 code=c.code,
                                 name=c.name,
                                 market=Market.A_SHARE,
@@ -199,13 +207,20 @@ if candidates:
                                 competence_score=3,
                                 notes=f"后台扫描推荐 - 距请客价{c.pb_distance_pct:+.1f}%",
                                 buy_pb=c.recommended_buy_pb,
-                                add_pb=c.min_pb,
-                                sell_pb=c.avg_pb
+                                add_pb=add_pb,
+                                sell_pb=sell_pb
                             )
+                            # 同步 AI 评分
+                            if c.ai_score:
+                                stock_service.update_stock(
+                                    c.code,
+                                    ai_score=c.ai_score,
+                                    ai_suggestion=c.ai_suggestion
+                                )
                             c.status = CandidateStatus.ADDED
                             success += 1
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            print(f"添加股票失败 {c.code}: {e}")
                 session.commit()
                 if success:
                     st.success(f"✅ 成功添加 {success} 只股票！")
@@ -230,6 +245,63 @@ if candidates:
                 session.commit()
                 st.info("备选池已清空")
                 st.rerun()
+
+    # 手动更新 AI 评分
+    st.divider()
+    st.markdown("#### 🤖 AI 评分管理")
+
+    # 找出未评分的股票
+    unscored_candidates = [c for c in available_candidates if not c.ai_score]
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if unscored_candidates:
+            st.caption(f"有 {len(unscored_candidates)} 只股票未获取 AI 评分")
+            if st.button("🤖 为所有未评分股票获取AI评分", use_container_width=True):
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                ai_analyzer = AIAnalyzer()
+
+                if ai_analyzer.last_error:
+                    st.error(ai_analyzer.last_error)
+                else:
+                    success_count = 0
+                    for idx, c in enumerate(unscored_candidates):
+                        progress_bar.progress((idx + 1) / len(unscored_candidates))
+                        status_text.text(f"正在分析 {c.name} ({idx + 1}/{len(unscored_candidates)})...")
+
+                        try:
+                            fundamental = ai_analyzer.fetch_fundamental_data(c.code)
+                            if fundamental:
+                                report = ai_analyzer.generate_analysis_report(fundamental)
+                                if report:
+                                    c.ai_score = report.ai_score
+                                    c.ai_suggestion = report.summary
+                                    c.updated_at = datetime.now()
+                                    success_count += 1
+                        except Exception as e:
+                            print(f"AI评分失败 {c.code}: {e}")
+
+                    session.commit()
+                    progress_bar.empty()
+                    status_text.empty()
+
+                    if success_count:
+                        st.success(f"✅ 成功为 {success_count} 只股票获取 AI 评分！")
+                        st.rerun()
+                    else:
+                        st.warning("未能获取任何评分")
+        else:
+            st.success("✅ 所有股票已完成 AI 评分")
+
+    with col2:
+        # 显示 AI 评分统计
+        scored_count = len([c for c in available_candidates if c.ai_score])
+        if scored_count > 0:
+            avg_score = sum(c.ai_score for c in available_candidates if c.ai_score) / scored_count
+            high_score_count = len([c for c in available_candidates if c.ai_score and c.ai_score >= 4])
+            st.metric("平均 AI 评分", f"{avg_score:.1f} ⭐")
+            st.caption(f"4分以上: {high_score_count} 只")
 else:
     st.info("备选池为空，启动后台扫描后符合条件的股票会自动加入")
 

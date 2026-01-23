@@ -16,6 +16,7 @@ except ImportError:
 
 from src.database import get_session, init_db
 from src.database.models import StockCandidate, ScanProgress, CandidateStatus, Asset
+from src.services.ai_analyzer import AIAnalyzer, get_qwen_api_key
 
 # 缓存文件路径
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
@@ -25,7 +26,7 @@ STOCK_LIST_CACHE = os.path.join(CACHE_DIR, 'stock_list_cache.json')
 class BackgroundScanner:
     """后台股票扫描器 - 自动扫描A股寻找低估股票"""
 
-    def __init__(self):
+    def __init__(self, enable_ai_scoring: bool = True):
         self.session = requests.Session()
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
@@ -35,6 +36,48 @@ class BackgroundScanner:
         self._scan_thread: Optional[threading.Thread] = None
         self._progress_callback: Optional[Callable] = None
         self._cached_stocks: Optional[List[dict]] = None
+        self._enable_ai_scoring = enable_ai_scoring
+        self._ai_analyzer: Optional[AIAnalyzer] = None
+
+    def _get_ai_analyzer(self) -> Optional[AIAnalyzer]:
+        """获取 AI 分析器实例（延迟初始化）"""
+        if not self._enable_ai_scoring:
+            return None
+        if self._ai_analyzer is None:
+            api_key = get_qwen_api_key()
+            if api_key:
+                self._ai_analyzer = AIAnalyzer(api_key)
+            else:
+                print("未配置 Qwen API Key，AI 评分功能已禁用")
+        return self._ai_analyzer
+
+    def get_ai_score(self, code: str, name: str = None) -> Optional[dict]:
+        """获取股票的 AI 评分"""
+        analyzer = self._get_ai_analyzer()
+        if not analyzer:
+            return None
+
+        try:
+            # 获取基本面数据
+            fundamental = analyzer.fetch_fundamental_data(code)
+            if not fundamental:
+                print(f"  无法获取 {code} 基本面数据")
+                return None
+
+            # 生成 AI 分析报告
+            report = analyzer.generate_analysis_report(fundamental)
+            if report:
+                return {
+                    'ai_score': report.ai_score,
+                    'ai_suggestion': report.summary
+                }
+            else:
+                print(f"  AI 分析失败: {analyzer.last_error}")
+                return None
+
+        except Exception as e:
+            print(f"  获取 AI 评分失败 {code}: {e}")
+            return None
 
     def _load_stock_cache(self) -> Optional[List[dict]]:
         """从缓存加载股票列表"""
@@ -239,16 +282,24 @@ class BackgroundScanner:
             if len(pb_values) < 50:
                 return None
 
-            # 计算统计数据
+            # 计算统计数据 - 与 stock_analyzer.py 保持一致
             sorted_pbs = sorted(pb_values)
             n = len(sorted_pbs)
             min_pb = sorted_pbs[0]
             max_pb = sorted_pbs[-1]
             avg_pb = sum(sorted_pbs) / n
+            median_pb = sorted_pbs[n // 2]
             current_pb = current_price / bvps if current_price else sorted_pbs[-1]
 
-            # 计算推荐请客价 (25%分位)
-            recommended_buy_pb = sorted_pbs[int(n * 0.25)]
+            # 计算分位数 - 与 stock_analyzer.py 保持一致
+            percentile_10 = sorted_pbs[int(n * 0.10)]
+            percentile_25 = sorted_pbs[int(n * 0.25)]
+            percentile_75 = sorted_pbs[int(n * 0.75)]
+
+            # 推荐阈值 - 与 stock_analyzer.py 保持一致
+            recommended_buy_pb = round(percentile_25, 2)   # 请客价: 25%分位
+            recommended_add_pb = round(percentile_10, 2)   # 加仓价: 10%分位
+            recommended_sell_pb = round(percentile_75, 2)  # 退出价: 75%分位
 
             # 计算距离请客价的百分比
             pb_distance_pct = ((current_pb - recommended_buy_pb) / recommended_buy_pb) * 100
@@ -259,11 +310,17 @@ class BackgroundScanner:
                 'industry': industry,
                 'current_price': current_price,
                 'current_pb': round(current_pb, 2),
-                'recommended_buy_pb': round(recommended_buy_pb, 2),
+                'recommended_buy_pb': recommended_buy_pb,
+                'recommended_add_pb': recommended_add_pb,
+                'recommended_sell_pb': recommended_sell_pb,
                 'pb_distance_pct': round(pb_distance_pct, 1),
                 'min_pb': round(min_pb, 2),
                 'max_pb': round(max_pb, 2),
-                'avg_pb': round(avg_pb, 2)
+                'avg_pb': round(avg_pb, 2),
+                'median_pb': round(median_pb, 2),
+                'percentile_10': round(percentile_10, 2),
+                'percentile_25': round(percentile_25, 2),
+                'percentile_75': round(percentile_75, 2)
             }
 
         except Exception as e:
@@ -380,6 +437,19 @@ class BackgroundScanner:
                 if analysis:
                     # 检查是否符合条件
                     if analysis['pb_distance_pct'] <= pb_threshold_pct:
+                        print(f"  [OK] 符合条件! 距离请客价: {analysis['pb_distance_pct']:.1f}%")
+
+                        # 获取 AI 评分
+                        ai_score = None
+                        ai_suggestion = None
+                        if self._enable_ai_scoring:
+                            print(f"  正在获取 AI 评分...")
+                            ai_result = self.get_ai_score(analysis['code'], analysis['name'])
+                            if ai_result:
+                                ai_score = ai_result['ai_score']
+                                ai_suggestion = ai_result['ai_suggestion']
+                                print(f"  AI评分: {ai_score}分")
+
                         # 添加到备选池
                         candidate = StockCandidate(
                             code=analysis['code'],
@@ -388,16 +458,19 @@ class BackgroundScanner:
                             current_price=analysis['current_price'],
                             current_pb=analysis['current_pb'],
                             recommended_buy_pb=analysis['recommended_buy_pb'],
+                            recommended_add_pb=analysis.get('recommended_add_pb'),
+                            recommended_sell_pb=analysis.get('recommended_sell_pb'),
                             pb_distance_pct=analysis['pb_distance_pct'],
                             min_pb=analysis['min_pb'],
                             max_pb=analysis['max_pb'],
                             avg_pb=analysis['avg_pb'],
                             pe_ttm=stock.get('pe'),
                             market_cap=stock.get('market_cap'),
+                            ai_score=ai_score,
+                            ai_suggestion=ai_suggestion,
                             status=CandidateStatus.PENDING
                         )
                         db_session.add(candidate)
-                        print(f"  [OK] 符合条件! 距离请客价: {analysis['pb_distance_pct']:.1f}%")
 
                 # 更新进度
                 progress.current_index = i + 1

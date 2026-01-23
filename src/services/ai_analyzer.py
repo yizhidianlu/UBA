@@ -358,7 +358,7 @@ PB历史数据 (近5年):
 
 请确保分析客观、专业，不要过于乐观或悲观。"""
 
-        # 调用 Gemini
+        # 调用 Qwen3-max API
         response = self._call_openai(prompt)
 
         if not response:

@@ -42,6 +42,8 @@ if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = None
 if 'search_results' not in st.session_state:
     st.session_state.search_results = None
+if 'edit_recommended_thresholds' not in st.session_state:
+    st.session_state.edit_recommended_thresholds = None
 
 # ==================== Add New Stock Section ====================
 st.markdown("### ➕ 添加新股票")
@@ -348,18 +350,56 @@ if stocks:
                 st.markdown("**阈值设置**")
 
                 if stock.threshold:
+                    # 获取推荐阈值按钮
+                    if st.button("📊 获取推荐阈值", use_container_width=True, key="get_recommended"):
+                        with st.spinner("分析PB历史数据..."):
+                            try:
+                                pb_data = analyzer.fetch_pb_history(stock.code, years=5)
+                                if pb_data:
+                                    pb_analysis = analyzer.analyze_pb(pb_data)
+                                    if pb_analysis:
+                                        st.session_state.edit_recommended_thresholds = {
+                                            'code': stock.code,
+                                            'buy_pb': pb_analysis.recommended_buy_pb,
+                                            'add_pb': pb_analysis.recommended_add_pb,
+                                            'sell_pb': pb_analysis.recommended_sell_pb
+                                        }
+                                        st.success(f"推荐阈值: 请客价 {pb_analysis.recommended_buy_pb} / 加仓价 {pb_analysis.recommended_add_pb} / 退出价 {pb_analysis.recommended_sell_pb}")
+                                        st.rerun()
+                                    else:
+                                        st.warning("PB数据不足，无法计算推荐阈值")
+                                else:
+                                    st.warning("无法获取PB历史数据")
+                            except Exception as e:
+                                st.error(f"获取推荐阈值失败: {e}")
+
+                    # 显示历史参考
                     stats = valuation_service.get_pb_stats(stock.id, years=5)
                     if stats:
                         st.caption(f"历史参考: 最低 {stats['min_pb']:.2f} / 平均 {stats['avg_pb']:.2f} / 最高 {stats['max_pb']:.2f}")
 
-                    new_buy_pb = st.number_input("请客价", value=float(stock.threshold.buy_pb), min_value=0.01, step=0.01, key="edit_buy")
-                    new_add_pb = st.number_input("加仓价", value=float(stock.threshold.add_pb or 0.0), min_value=0.0, step=0.01, key="edit_add")
-                    new_sell_pb = st.number_input("退出价", value=float(stock.threshold.sell_pb or 0.0), min_value=0.0, step=0.01, key="edit_sell")
+                    # 判断是否使用推荐阈值作为默认值
+                    recommended = st.session_state.edit_recommended_thresholds
+                    if recommended and recommended.get('code') == stock.code:
+                        default_buy = recommended['buy_pb']
+                        default_add = recommended['add_pb']
+                        default_sell = recommended['sell_pb']
+                        st.info(f"💡 使用推荐阈值: 请客价 {default_buy} / 加仓价 {default_add} / 退出价 {default_sell}")
+                    else:
+                        default_buy = float(stock.threshold.buy_pb)
+                        default_add = float(stock.threshold.add_pb or 0.0)
+                        default_sell = float(stock.threshold.sell_pb or 0.0)
+
+                    new_buy_pb = st.number_input("请客价", value=default_buy, min_value=0.01, step=0.01, key="edit_buy")
+                    new_add_pb = st.number_input("加仓价", value=default_add, min_value=0.0, step=0.01, key="edit_add")
+                    new_sell_pb = st.number_input("退出价", value=default_sell, min_value=0.0, step=0.01, key="edit_sell")
 
                     if st.button("💾 保存阈值", use_container_width=True):
                         stock_service.update_threshold(stock.code, buy_pb=new_buy_pb,
                                                        add_pb=new_add_pb if new_add_pb > 0 else None,
                                                        sell_pb=new_sell_pb if new_sell_pb > 0 else None)
+                        # 清除推荐阈值缓存
+                        st.session_state.edit_recommended_thresholds = None
                         st.success("已保存")
                         st.rerun()
 
