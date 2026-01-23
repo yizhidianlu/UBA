@@ -199,7 +199,12 @@ with col1:
             if default_display and not st.session_state.ai_input_code:
                 selected_code = stock_options[selected_display] if selected_display else None
             if selected_display:
-                if st.button("🚀 生成 AI 分析报告", type="primary", use_container_width=True):
+                if st.button(
+                    "🚀 生成 AI 分析报告",
+                    type="primary",
+                    use_container_width=True,
+                    key="generate_report_from_pool"
+                ):
                     st.session_state.auto_generate_report_code = stock_options[selected_display]
                     st.session_state.selected_report_code = stock_options[selected_display]
                     st.rerun()
@@ -224,7 +229,8 @@ with col1:
             "🚀 生成 AI 分析报告",
             type="primary",
             use_container_width=True,
-            disabled=not input_code
+            disabled=not input_code,
+            key="generate_report_from_input"
         ):
             st.session_state.auto_generate_report_code = input_code
             st.session_state.selected_report_code = input_code
