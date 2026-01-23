@@ -196,10 +196,10 @@ if selected_code:
 
             # 报告时的数据快照
             if historical_report.price_at_report:
+                pb_str = f"{historical_report.pb_at_report:.2f}" if historical_report.pb_at_report else "N/A"
+                pe_str = f"{historical_report.pe_at_report:.2f}" if historical_report.pe_at_report else "N/A"
                 st.caption(
-                    f"📊 报告时数据: 价格 ¥{historical_report.price_at_report:.2f} | "
-                    f"PB {historical_report.pb_at_report:.2f if historical_report.pb_at_report else 'N/A'} | "
-                    f"PE {historical_report.pe_at_report:.2f if historical_report.pe_at_report else 'N/A'}"
+                    f"📊 报告时数据: 价格 ¥{historical_report.price_at_report:.2f} | PB {pb_str} | PE {pe_str}"
                 )
 
         with col2:
