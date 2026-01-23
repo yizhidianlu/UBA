@@ -2,14 +2,20 @@
 import streamlit as st
 import pandas as pd
 from datetime import date
-from src.database import get_session
+from src.database import get_session, init_db
 from src.database.models import Asset, Signal, SignalStatus, ActionType
 from src.services import SignalEngine, ActionService, RiskControl
+from src.ui import require_auth, render_auth_sidebar
 
 st.set_page_config(page_title="信号中心 - 不败之地", page_icon="🔔", layout="wide")
 st.title("🔔 信号中心")
 
+init_db()
 session = get_session()
+require_auth(session)
+with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
 signal_engine = SignalEngine(session)
 action_service = ActionService(session)
 risk_control = RiskControl(session)

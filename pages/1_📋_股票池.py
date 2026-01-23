@@ -3,10 +3,13 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from src.database import get_session
+from src.database import get_session, init_db
 from src.database.models import Market, Valuation
 from src.services import StockPoolService, ValuationService, StockAnalyzer, RealtimeService, AIAnalyzer
-from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer
+from src.ui import (
+    GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer,
+    require_auth, render_auth_sidebar
+)
 
 st.set_page_config(
     page_title=f"股票池 - {APP_NAME_CN} | {APP_NAME_EN}",
@@ -26,7 +29,12 @@ with col2:
         st.rerun()
 
 # Initialize services
+init_db()
 session = get_session()
+require_auth(session)
+with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
 stock_service = StockPoolService(session)
 valuation_service = ValuationService(session)
 realtime_service = RealtimeService()

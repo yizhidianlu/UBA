@@ -6,6 +6,7 @@ from .action_service import ActionService
 from .stock_analyzer import StockAnalyzer, StockInfo, PBAnalysis
 from .realtime_service import RealtimeService, RealtimeQuote
 from .ai_analyzer import AIAnalyzer, FundamentalData, AnalysisReport
+from .auth_service import AuthService
 from .stock_screener import StockScreener, StockRecommendation
 from .background_scanner import BackgroundScanner, get_scanner
 
@@ -23,6 +24,7 @@ __all__ = [
     'AIAnalyzer',
     'FundamentalData',
     'AnalysisReport',
+    'AuthService',
     'StockScreener',
     'StockRecommendation',
     'BackgroundScanner',

@@ -4,9 +4,10 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
-from src.database import get_session
+from src.database import get_session, init_db
 from src.database.models import Asset, Signal, SignalStatus, PortfolioPosition
 from src.services import StockPoolService, SignalEngine, RealtimeService
+from src.ui import require_auth, render_auth_sidebar
 
 st.set_page_config(page_title="仪表盘 - 不败之地", page_icon="📊", layout="wide")
 
@@ -36,11 +37,16 @@ with col3:
         st.session_state.last_refresh = datetime.now()
         st.rerun()
 
+# Initialize services
+init_db()
+session = get_session()
+require_auth(session)
+with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
+
 # Show last update time
 st.caption(f"📡 最后更新: {st.session_state.last_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
-
-# Initialize services
-session = get_session()
 stock_service = StockPoolService(session)
 signal_engine = SignalEngine(session)
 realtime_service = RealtimeService()

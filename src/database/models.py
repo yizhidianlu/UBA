@@ -241,3 +241,14 @@ class AIAnalysisReport(Base):
     market_cap_at_report = Column(Float)                    # 报告时市值
     created_at = Column(DateTime, default=datetime.now)     # 报告生成时间
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class User(Base):
+    """账号信息"""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String(255), unique=True, nullable=False, index=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    last_login_at = Column(DateTime)

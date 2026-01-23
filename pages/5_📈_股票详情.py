@@ -3,9 +3,10 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import date, timedelta
-from src.database import get_session
+from src.database import get_session, init_db
 from src.database.models import Asset, Signal, Action
 from src.services import StockPoolService, ValuationService
+from src.ui import require_auth, render_auth_sidebar
 
 try:
     from src.services.background_scanner import get_scanner
@@ -16,7 +17,12 @@ except ImportError:
 st.set_page_config(page_title="股票详情 - 不败之地", page_icon="📈", layout="wide")
 st.title("📈 股票详情")
 
+init_db()
 session = get_session()
+require_auth(session)
+with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
 stock_service = StockPoolService(session)
 valuation_service = ValuationService(session)
 

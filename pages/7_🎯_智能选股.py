@@ -20,7 +20,10 @@ except ImportError as e:
     CandidateStatus = None
 
 from src.services import StockPoolService, AIAnalyzer
-from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer
+from src.ui import (
+    GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer,
+    require_auth, render_auth_sidebar
+)
 
 
 def sync_ai_report_to_database(session, code: str, name: str, ai_score: int, ai_suggestion: str):
@@ -57,6 +60,10 @@ st.markdown(render_header("智能选股", "后台扫描全市场低估股票", "
 # Initialize database and services
 init_db()
 session = get_session()
+require_auth(session)
+with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
 stock_service = StockPoolService(session)
 scanner = get_scanner() if SCANNER_AVAILABLE else None
 

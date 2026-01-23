@@ -101,6 +101,21 @@ def run_migrations(db_path: str):
         cursor.execute('CREATE INDEX IF NOT EXISTS ix_ai_analysis_reports_code ON ai_analysis_reports(code)')
         print('Migration: Created ai_analysis_reports table')
 
+    # Migration 3: Create users table if not exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+    if not cursor.fetchone():
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email VARCHAR(255) NOT NULL UNIQUE,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_login_at DATETIME
+            )
+        ''')
+        cursor.execute('CREATE INDEX IF NOT EXISTS ix_users_email ON users(email)')
+        print('Migration: Created users table')
+
     conn.commit()
     conn.close()
 

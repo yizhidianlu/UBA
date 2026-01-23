@@ -5,7 +5,10 @@ from typing import Optional, Callable
 from src.database import get_session, init_db
 from src.database.models import Asset, AIAnalysisReport
 from src.services import StockPoolService, AIAnalyzer, RealtimeService, ValuationService
-from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer, render_alert
+from src.ui import (
+    GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer, render_alert,
+    require_auth, render_auth_sidebar
+)
 
 st.set_page_config(
     page_title=f"AI分析 - {APP_NAME_CN} | {APP_NAME_EN}",
@@ -22,6 +25,10 @@ st.markdown(render_header("AI 基本面分析", "使用 Qwen3-max 生成专业�
 # Initialize services
 init_db()
 session = get_session()
+require_auth(session)
+with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
 stock_service = StockPoolService(session)
 valuation_service = ValuationService(session)
 realtime_service = RealtimeService()

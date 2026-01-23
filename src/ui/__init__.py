@@ -15,6 +15,7 @@ from .styles import (
     get_status_style,
     format_change
 )
+from .auth import require_auth, render_auth_sidebar
 
 __all__ = [
     'APP_NAME_CN',
@@ -30,5 +31,7 @@ __all__ = [
     'render_alert',
     'render_footer',
     'get_status_style',
-    'format_change'
+    'format_change',
+    'require_auth',
+    'render_auth_sidebar'
 ]

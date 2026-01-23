@@ -3,14 +3,20 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from src.database import get_session
+from src.database import get_session, init_db
 from src.database.models import Asset, PortfolioPosition, Action
 from src.services import RiskControl, ActionService
+from src.ui import require_auth, render_auth_sidebar
 
 st.set_page_config(page_title="持仓管理 - 不败之地", page_icon="💼", layout="wide")
 st.title("💼 持仓管理")
 
+init_db()
 session = get_session()
+require_auth(session)
+with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
 risk_control = RiskControl(session)
 action_service = ActionService(session)
 

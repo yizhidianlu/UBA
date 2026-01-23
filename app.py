@@ -6,7 +6,8 @@ from datetime import datetime, date
 # Import UI styles
 from src.ui import (
     GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, APP_FULL_NAME, APP_SLOGAN,
-    render_main_header, render_metric_card, render_alert, render_footer
+    render_main_header, render_metric_card, render_alert, render_footer,
+    require_auth, render_auth_sidebar
 )
 
 # Import database modules
@@ -43,6 +44,7 @@ st.markdown(render_main_header(), unsafe_allow_html=True)
 from src.services import RealtimeService
 
 session = get_session()
+require_auth(session)
 realtime_service = RealtimeService()
 
 # Get basic stats
@@ -240,6 +242,8 @@ today_visits = get_today_visits(session)
 
 # Sidebar branding
 with st.sidebar:
+    render_auth_sidebar()
+    st.divider()
     st.markdown(textwrap.dedent(f"""
     <div style="text-align: center; padding: 1rem 0;">
         <div style="font-size: 2.5rem;">🛡️</div>
