@@ -85,11 +85,14 @@ col1, col2 = st.columns(2)
 with col1:
     st.markdown("#### ⚙️ 扫描设置")
 
+    if "bg_distance" not in st.session_state:
+        st.session_state["bg_distance"] = 5
+
     bg_max_distance = st.slider(
         "距请客价最大距离 (%)",
         min_value=5,
         max_value=50,
-        value=st.session_state.get("bg_distance", 5),
+        value=st.session_state["bg_distance"],
         step=5,
         key="bg_distance",
         help="PB距离请客价的百分比阈值"
