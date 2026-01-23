@@ -37,6 +37,8 @@ if 'selected_report_code' not in st.session_state:
     st.session_state.selected_report_code = None
 if 'auto_generate_report_code' not in st.session_state:
     st.session_state.auto_generate_report_code = None
+if 'ai_input_code' not in st.session_state:
+    st.session_state.ai_input_code = ""
 
 st.divider()
 
@@ -171,9 +173,12 @@ with col1:
             selected_code = None
 
     with tab2:
+        if selected_report_code and selected_report_code != st.session_state.ai_input_code:
+            st.session_state.ai_input_code = selected_report_code
+
         input_code = st.text_input(
             "股票代码",
-            value=selected_report_code or "",
+            key="ai_input_code",
             placeholder="输入股票代码，如 600519",
             help="支持A股代码"
         )
