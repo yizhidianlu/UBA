@@ -255,9 +255,9 @@ if selected_code:
                 st.metric("AI 评分", f"{'⭐' * historical_report.ai_score} ({historical_report.ai_score}分)")
 
         with col3:
-            if st.button("🔄 更新报告", type="primary", use_container_width=True):
-                with st.spinner("正在生成新的分析报告..."):
-                    result, error = generate_new_report(selected_code, include_pb_history)
+            if st.button("📝 生成完整报告", type="primary", use_container_width=True):
+                with st.spinner("正在生成完整分析报告..."):
+                    result, error = generate_new_report(selected_code, True)
                     if result:
                         st.success("✅ 报告已更新！")
                         st.rerun()
