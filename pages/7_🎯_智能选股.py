@@ -86,7 +86,7 @@ st.markdown("""
     <strong>💡 功能说明</strong><br>
     后台扫描器会按顺序分析A股所有股票，将符合条件的股票自动加入备选池。<br>
     <strong>🤖 AI评分：</strong>扫描器会自动为每只符合条件的股票进行AI评分，无需手动操作。<br>
-    扫描间隔已固定为10秒/只股票。
+    扫描间隔已固定为5秒/只股票。
 </div>
 """, unsafe_allow_html=True)
 
@@ -110,8 +110,8 @@ with col1:
         help="PB距离请客价的百分比阈值"
     )
 
-    bg_interval = 10  # 固定扫描间隔为10秒
-    st.info("⏱️ 扫描间隔: 10秒/只股票")
+    bg_interval = 5  # 固定扫描间隔为5秒
+    st.info("⏱️ 扫描间隔: 5秒/只股票")
 
 with col2:
     st.markdown("#### 📊 扫描状态")
