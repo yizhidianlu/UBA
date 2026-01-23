@@ -153,11 +153,22 @@ st.divider()
 st.markdown("### 🤖 AI评分线程")
 st.caption("💡 AI评分与扫描异步运行，按添加时间从早到晚依次评分")
 
+ai_control_supported = all(
+    hasattr(scanner, method)
+    for method in ("is_ai_scoring_running", "start_ai_scoring", "stop_ai_scoring")
+)
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    ai_running = scanner.is_ai_scoring_running()
-    if ai_running:
+    ai_running = scanner.is_ai_scoring_running() if ai_control_supported else False
+    if not ai_control_supported:
+        st.markdown("""
+        <div style="background: #FFF3E0; padding: 0.5rem; border-radius: 8px; text-align: center;">
+            <strong>⚠️ AI线程未启用</strong>
+        </div>
+        """, unsafe_allow_html=True)
+    elif ai_running:
         st.markdown("""
         <div style="background: #E8F5E9; padding: 0.5rem; border-radius: 8px; text-align: center;">
             <strong>🟢 AI评分运行中</strong>
@@ -171,7 +182,7 @@ with col1:
         """, unsafe_allow_html=True)
 
 with col2:
-    if st.button("🤖 启动AI评分", type="primary", use_container_width=True):
+    if st.button("🤖 启动AI评分", type="primary", use_container_width=True, disabled=not ai_control_supported):
         if scanner.start_ai_scoring(interval=30):
             st.success("✅ AI评分线程已启动！")
             st.rerun()
@@ -179,10 +190,13 @@ with col2:
             st.warning("AI评分已在运行中")
 
 with col3:
-    if st.button("⏹️ 停止AI评分", use_container_width=True):
+    if st.button("⏹️ 停止AI评分", use_container_width=True, disabled=not ai_control_supported):
         scanner.stop_ai_scoring()
         st.info("AI评分已停止")
         st.rerun()
+
+if not ai_control_supported:
+    st.warning("当前运行环境尚未更新AI评分线程功能，请先部署最新的服务端代码。")
 
 st.divider()
 
