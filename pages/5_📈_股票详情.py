@@ -85,15 +85,7 @@ if selected_code:
 
             valuations = valuation_service.get_pb_history(asset.id, start_date=start_date)
             auto_fetch_key = f"pb_autofetch_{asset.code}_{time_range}"
-            scan_running = False
-            if SCANNER_AVAILABLE:
-                scanner = get_scanner()
-                scan_running = scanner.is_running()
-
-            if scan_running and not valuations:
-                st.info("扫描进行中，PB历史数据获取已暂缓")
-
-            if not valuations and not scan_running and not st.session_state.get(auto_fetch_key):
+            if not valuations and not st.session_state.get(auto_fetch_key):
                 with st.spinner("正在获取PB历史数据..."):
                     try:
                         data_list = valuation_service.fetch_pb_data(asset.code, allow_wait=False)
@@ -170,10 +162,10 @@ if selected_code:
             else:
                 st.info("暂无PB历史数据")
 
-                if st.button("📥 获取历史数据", disabled=scan_running):
+                if st.button("📥 获取历史数据"):
                     with st.spinner("正在获取数据..."):
                         try:
-                            data_list = valuation_service.fetch_pb_data(asset.code, allow_wait=True)
+                            data_list = valuation_service.fetch_pb_data(asset.code, allow_wait=False)
                             if data_list:
                                 count = valuation_service.batch_save_valuations(asset.id, data_list)
                                 st.success(f"成功获取 {count} 条数据")
