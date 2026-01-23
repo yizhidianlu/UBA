@@ -148,6 +148,7 @@ with col1:
 
     stocks = stock_service.get_all_stocks()
     selected_report_code = st.session_state.selected_report_code
+    selected_code = selected_report_code
 
     tab1, tab2 = st.tabs(["从股票池选择", "输入股票代码"])
 
@@ -168,10 +169,11 @@ with col1:
                 index=default_index,
                 help="从已添加的股票池中选择"
             )
-            selected_code = stock_options[selected_display] if selected_display else None
+            if default_display:
+                selected_code = stock_options[selected_display] if selected_display else None
         else:
             st.info("股票池为空，请先添加股票或直接输入代码")
-            selected_code = None
+            selected_code = selected_report_code
 
     with tab2:
         if selected_report_code and selected_report_code != st.session_state.ai_input_code:
