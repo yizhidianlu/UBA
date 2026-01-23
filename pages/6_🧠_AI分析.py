@@ -1,7 +1,7 @@
 """AI-powered fundamental analysis page using Qwen3-max."""
 import streamlit as st
 from datetime import datetime, date, timedelta
-from src.database import get_session
+from src.database import get_session, init_db
 from src.database.models import Asset, AIAnalysisReport
 from src.services import StockPoolService, AIAnalyzer, RealtimeService, ValuationService
 from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer, render_alert
@@ -19,6 +19,7 @@ st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 st.markdown(render_header("AI 基本面分析", "使用 Qwen3-max 生成专业投资分析报告", "🧠"), unsafe_allow_html=True)
 
 # Initialize services
+init_db()
 session = get_session()
 stock_service = StockPoolService(session)
 valuation_service = ValuationService(session)
