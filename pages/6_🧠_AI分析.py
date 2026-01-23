@@ -1,6 +1,7 @@
 """AI-powered fundamental analysis page using Qwen3-max."""
 import streamlit as st
 from datetime import datetime, date, timedelta
+from typing import Optional, Callable
 from src.database import get_session, init_db
 from src.database.models import Asset, AIAnalysisReport
 from src.services import StockPoolService, AIAnalyzer, RealtimeService, ValuationService
@@ -97,8 +98,14 @@ def save_report(report, fundamental):
     session.commit()
 
 
-def generate_new_report(selected_code, include_pb_history=True):
+def generate_new_report(
+    selected_code,
+    include_pb_history=True,
+    progress_callback: Optional[Callable[[int, str], None]] = None
+):
     """生成新的AI分析报告"""
+    if progress_callback:
+        progress_callback(10, "获取股票基本面数据...")
     fundamental = ai_analyzer.fetch_fundamental_data(selected_code)
 
     if not fundamental:
@@ -111,6 +118,8 @@ def generate_new_report(selected_code, include_pb_history=True):
     threshold_sell = None
 
     if include_pb_history:
+        if progress_callback:
+            progress_callback(30, "加载PB历史数据...")
         stock = stock_service.get_stock(selected_code)
         if stock:
             start_date = date.today() - timedelta(days=5 * 365)
@@ -123,6 +132,8 @@ def generate_new_report(selected_code, include_pb_history=True):
                 threshold_add = stock.threshold.add_pb
                 threshold_sell = stock.threshold.sell_pb
 
+    if progress_callback:
+        progress_callback(60, "生成AI分析报告...")
     report = ai_analyzer.generate_analysis_report(
         fundamental=fundamental,
         pb_history=pb_history,
@@ -134,6 +145,8 @@ def generate_new_report(selected_code, include_pb_history=True):
     if report:
         # 保存报告
         save_report(report, fundamental)
+        if progress_callback:
+            progress_callback(100, "报告已生成")
         return {"report": report, "fundamental": fundamental}, None
     else:
         error_msg = getattr(ai_analyzer, 'last_error', None) or "未知错误"
@@ -213,8 +226,17 @@ if auto_generate_code and auto_generate_code != selected_code:
 if selected_code:
     if st.session_state.auto_generate_report_code:
         st.session_state.auto_generate_report_code = None
-        with st.spinner("正在获取数据并生成分析报告，请稍候..."):
-            result, error = generate_new_report(selected_code, include_pb_history)
+        progress_container = st.container()
+        with progress_container:
+            progress_bar = st.progress(0)
+            progress_text = st.empty()
+
+            def update_progress(value: int, message: str) -> None:
+                progress_bar.progress(min(value, 100))
+                progress_text.caption(message)
+
+            update_progress(5, "准备生成分析报告...")
+            result, error = generate_new_report(selected_code, include_pb_history, update_progress)
             if result:
                 st.success("✅ 报告生成成功！")
                 st.rerun()
@@ -256,8 +278,17 @@ if selected_code:
 
         with col3:
             if st.button("📝 生成完整报告", type="primary", use_container_width=True):
-                with st.spinner("正在生成完整分析报告..."):
-                    result, error = generate_new_report(selected_code, True)
+                progress_container = st.container()
+                with progress_container:
+                    progress_bar = st.progress(0)
+                    progress_text = st.empty()
+
+                    def update_progress(value: int, message: str) -> None:
+                        progress_bar.progress(min(value, 100))
+                        progress_text.caption(message)
+
+                    update_progress(5, "准备生成完整报告...")
+                    result, error = generate_new_report(selected_code, True, update_progress)
                     if result:
                         st.success("✅ 报告已更新！")
                         st.rerun()
@@ -324,8 +355,17 @@ if selected_code:
         st.info(f"📋 暂无 {selected_code} 的分析报告")
 
         if st.button("🚀 生成 AI 分析报告", type="primary", use_container_width=True):
-            with st.spinner("正在获取数据并生成分析报告，请稍候..."):
-                result, error = generate_new_report(selected_code, include_pb_history)
+            progress_container = st.container()
+            with progress_container:
+                progress_bar = st.progress(0)
+                progress_text = st.empty()
+
+                def update_progress(value: int, message: str) -> None:
+                    progress_bar.progress(min(value, 100))
+                    progress_text.caption(message)
+
+                update_progress(5, "准备生成分析报告...")
+                result, error = generate_new_report(selected_code, include_pb_history, update_progress)
                 if result:
                     st.success("✅ 报告生成成功！")
                     st.rerun()
