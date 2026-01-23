@@ -8,7 +8,7 @@ from src.database.models import Market, Valuation
 from src.services import StockPoolService, ValuationService, StockAnalyzer, RealtimeService, AIAnalyzer
 from src.ui import (
     GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer,
-    require_auth, render_auth_sidebar
+    require_auth, render_auth_sidebar, get_current_user_id
 )
 
 st.set_page_config(
@@ -32,10 +32,11 @@ with col2:
 init_db()
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 with st.sidebar:
     render_auth_sidebar()
     st.divider()
-stock_service = StockPoolService(session)
+stock_service = StockPoolService(session, user_id)
 valuation_service = ValuationService(session)
 realtime_service = RealtimeService()
 

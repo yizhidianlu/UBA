@@ -69,3 +69,10 @@ def render_auth_sidebar() -> None:
     if st.sidebar.button("退出登录", use_container_width=True):
         st.session_state.pop("auth_user", None)
         st.rerun()
+
+
+def get_current_user_id() -> int:
+    user = st.session_state.get("auth_user")
+    if not user:
+        raise RuntimeError("User is not authenticated")
+    return user["id"]

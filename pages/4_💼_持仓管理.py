@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 from src.database import get_session, init_db
 from src.database.models import Asset, PortfolioPosition, Action
 from src.services import RiskControl, ActionService
-from src.ui import require_auth, render_auth_sidebar
+from src.ui import require_auth, render_auth_sidebar, get_current_user_id
 
 st.set_page_config(page_title="持仓管理 - 不败之地", page_icon="💼", layout="wide")
 st.title("💼 持仓管理")
@@ -14,11 +14,12 @@ st.title("💼 持仓管理")
 init_db()
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 with st.sidebar:
     render_auth_sidebar()
     st.divider()
-risk_control = RiskControl(session)
-action_service = ActionService(session)
+risk_control = RiskControl(session, user_id)
+action_service = ActionService(session, user_id)
 
 # Position summary
 summary = risk_control.get_position_summary()
@@ -43,13 +44,17 @@ with col_left:
     st.subheader("持仓明细")
 
     positions = session.query(PortfolioPosition).filter(
-        PortfolioPosition.position_pct > 0
+        PortfolioPosition.position_pct > 0,
+        PortfolioPosition.user_id == user_id
     ).all()
 
     if positions:
         data = []
         for pos in positions:
-            asset = session.query(Asset).filter(Asset.id == pos.asset_id).first()
+            asset = session.query(Asset).filter(
+                Asset.id == pos.asset_id,
+                Asset.user_id == user_id
+            ).first()
             if asset:
                 data.append({
                     "股票": asset.name,
@@ -78,7 +83,10 @@ with col_right:
     if positions:
         chart_data = []
         for pos in positions:
-            asset = session.query(Asset).filter(Asset.id == pos.asset_id).first()
+            asset = session.query(Asset).filter(
+                Asset.id == pos.asset_id,
+                Asset.user_id == user_id
+            ).first()
             if asset:
                 chart_data.append({
                     "名称": asset.name,
@@ -117,7 +125,10 @@ recent_actions = action_service.get_recent_actions(limit=20)
 if recent_actions:
     action_data = []
     for action in recent_actions:
-        asset = session.query(Asset).filter(Asset.id == action.asset_id).first()
+        asset = session.query(Asset).filter(
+            Asset.id == action.asset_id,
+            Asset.user_id == user_id
+        ).first()
         action_data.append({
             "日期": action.action_date,
             "股票": asset.name if asset else "-",
@@ -156,7 +167,10 @@ if compliance['violations']:
 
     with st.expander("查看违规详情"):
         for v in compliance['violations']:
-            asset = session.query(Asset).filter(Asset.id == v['asset_id']).first()
+            asset = session.query(Asset).filter(
+                Asset.id == v['asset_id'],
+                Asset.user_id == user_id
+            ).first()
             st.markdown(f"- **{v['date']}** {asset.name if asset else '-'} ({v['type']}): {v['note']}")
 
 st.divider()
@@ -165,7 +179,7 @@ st.divider()
 with st.expander("⚙️ 手动调整仓位"):
     st.warning("此功能用于修正数据，正常交易请通过信号中心执行")
 
-    stocks = session.query(Asset).all()
+    stocks = session.query(Asset).filter(Asset.user_id == user_id).all()
     if stocks:
         selected_code = st.selectbox(
             "选择股票",
@@ -177,7 +191,8 @@ with st.expander("⚙️ 手动调整仓位"):
             asset = next((s for s in stocks if s.code == selected_code), None)
             if asset:
                 pos = session.query(PortfolioPosition).filter(
-                    PortfolioPosition.asset_id == asset.id
+                    PortfolioPosition.asset_id == asset.id,
+                    PortfolioPosition.user_id == user_id
                 ).first()
 
                 current_pct = float(pos.position_pct) if pos and pos.position_pct else 0.0

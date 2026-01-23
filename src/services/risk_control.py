@@ -27,10 +27,12 @@ class RiskControl:
     def __init__(
         self,
         session: Session,
+        user_id: int,
         max_single_position: float = DEFAULT_MAX_SINGLE_POSITION,
         max_total_position: float = DEFAULT_MAX_TOTAL_POSITION
     ):
         self.session = session
+        self.user_id = user_id
         self.max_single_position = max_single_position
         self.max_total_position = max_total_position
 
@@ -46,7 +48,8 @@ class RiskControl:
         """
         # Get current position
         position = self.session.query(PortfolioPosition).filter(
-            PortfolioPosition.asset_id == asset_id
+            PortfolioPosition.asset_id == asset_id,
+            PortfolioPosition.user_id == self.user_id
         ).first()
 
         current_position = position.position_pct if position else 0
@@ -108,7 +111,8 @@ class RiskControl:
         - 卖出数量不能超过持仓
         """
         position = self.session.query(PortfolioPosition).filter(
-            PortfolioPosition.asset_id == asset_id
+            PortfolioPosition.asset_id == asset_id,
+            PortfolioPosition.user_id == self.user_id
         ).first()
 
         current_position = position.position_pct if position else 0
@@ -131,13 +135,16 @@ class RiskControl:
 
     def _get_total_position(self) -> float:
         """获取当前总仓位"""
-        positions = self.session.query(PortfolioPosition).all()
+        positions = self.session.query(PortfolioPosition).filter(
+            PortfolioPosition.user_id == self.user_id
+        ).all()
         return sum(p.position_pct for p in positions if p.position_pct)
 
     def get_position_summary(self) -> dict:
         """获取仓位汇总"""
         positions = self.session.query(PortfolioPosition).filter(
-            PortfolioPosition.position_pct > 0
+            PortfolioPosition.position_pct > 0,
+            PortfolioPosition.user_id == self.user_id
         ).all()
 
         total_position = sum(p.position_pct for p in positions)
@@ -169,7 +176,8 @@ class RiskControl:
 
         if asset_id:
             position = self.session.query(PortfolioPosition).filter(
-                PortfolioPosition.asset_id == asset_id
+                PortfolioPosition.asset_id == asset_id,
+                PortfolioPosition.user_id == self.user_id
             ).first()
             current_stock_position = position.position_pct if position else 0
 
@@ -190,7 +198,8 @@ class RiskControl:
     ) -> PortfolioPosition:
         """更新持仓"""
         position = self.session.query(PortfolioPosition).filter(
-            PortfolioPosition.asset_id == asset_id
+            PortfolioPosition.asset_id == asset_id,
+            PortfolioPosition.user_id == self.user_id
         ).first()
 
         if position:
@@ -201,6 +210,7 @@ class RiskControl:
                 position.shares = shares
         else:
             position = PortfolioPosition(
+                user_id=self.user_id,
                 asset_id=asset_id,
                 position_pct=new_position_pct,
                 avg_cost=avg_cost,

@@ -7,7 +7,7 @@ from datetime import datetime
 from src.database import get_session, init_db
 from src.database.models import Asset, Signal, SignalStatus, PortfolioPosition
 from src.services import StockPoolService, SignalEngine, RealtimeService
-from src.ui import require_auth, render_auth_sidebar
+from src.ui import require_auth, render_auth_sidebar, get_current_user_id
 
 st.set_page_config(page_title="仪表盘 - 不败之地", page_icon="📊", layout="wide")
 
@@ -41,14 +41,15 @@ with col3:
 init_db()
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 with st.sidebar:
     render_auth_sidebar()
     st.divider()
 
 # Show last update time
 st.caption(f"📡 最后更新: {st.session_state.last_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
-stock_service = StockPoolService(session)
-signal_engine = SignalEngine(session)
+stock_service = StockPoolService(session, user_id)
+signal_engine = SignalEngine(session, user_id)
 realtime_service = RealtimeService()
 
 # Get all stocks
@@ -75,7 +76,10 @@ with col2:
     st.metric("待处理信号", f"{len(open_signals)}")
 
 with col3:
-    positions = session.query(PortfolioPosition).filter(PortfolioPosition.position_pct > 0).all()
+    positions = session.query(PortfolioPosition).filter(
+        PortfolioPosition.position_pct > 0,
+        PortfolioPosition.user_id == user_id
+    ).all()
     total_position = sum(p.position_pct for p in positions)
     st.metric("总仓位", f"{total_position:.1f}%")
 
@@ -187,7 +191,10 @@ with col_right:
 
     if today_signals:
         for signal in today_signals:
-            asset = session.query(Asset).filter(Asset.id == signal.asset_id).first()
+            asset = session.query(Asset).filter(
+                Asset.id == signal.asset_id,
+                Asset.user_id == user_id
+            ).first()
             if asset:
                 quote = realtime_data.get(asset.code)
 
@@ -228,7 +235,10 @@ st.divider()
 # Portfolio section
 st.subheader("💼 持仓概览")
 
-positions = session.query(PortfolioPosition).filter(PortfolioPosition.position_pct > 0).all()
+positions = session.query(PortfolioPosition).filter(
+    PortfolioPosition.position_pct > 0,
+    PortfolioPosition.user_id == user_id
+).all()
 
 if positions:
     col1, col2 = st.columns([1, 1])
@@ -238,7 +248,10 @@ if positions:
         total_value_change = 0
 
         for pos in positions:
-            asset = session.query(Asset).filter(Asset.id == pos.asset_id).first()
+            asset = session.query(Asset).filter(
+                Asset.id == pos.asset_id,
+                Asset.user_id == user_id
+            ).first()
             if asset:
                 quote = realtime_data.get(asset.code)
                 current_price = quote.price if quote else None
@@ -269,7 +282,10 @@ if positions:
         # Pie chart
         chart_data = []
         for pos in positions:
-            asset = session.query(Asset).filter(Asset.id == pos.asset_id).first()
+            asset = session.query(Asset).filter(
+                Asset.id == pos.asset_id,
+                Asset.user_id == user_id
+            ).first()
             if asset:
                 chart_data.append({"名称": asset.name, "仓位": pos.position_pct})
 

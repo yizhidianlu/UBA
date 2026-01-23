@@ -7,7 +7,7 @@ from datetime import datetime, date
 from src.ui import (
     GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, APP_FULL_NAME, APP_SLOGAN,
     render_main_header, render_metric_card, render_alert, render_footer,
-    require_auth, render_auth_sidebar
+    require_auth, render_auth_sidebar, get_current_user_id
 )
 
 # Import database modules
@@ -27,14 +27,17 @@ st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
 # Initialize database on first run
 init_db()
 
-def get_today_visits(db_session) -> int:
+def get_today_visits(db_session, user_id: int) -> int:
     """Get and increment today's visit count."""
     today = date.today()
-    visit_log = db_session.query(VisitLog).filter(VisitLog.visit_date == today).first()
+    visit_log = db_session.query(VisitLog).filter(
+        VisitLog.visit_date == today,
+        VisitLog.user_id == user_id
+    ).first()
     if visit_log:
         visit_log.count += 1
     else:
-        visit_log = VisitLog(visit_date=today, count=1)
+        visit_log = VisitLog(user_id=user_id, visit_date=today, count=1)
         db_session.add(visit_log)
     db_session.commit()
     return visit_log.count
@@ -45,10 +48,11 @@ from src.services import RealtimeService
 
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 realtime_service = RealtimeService()
 
 # Get basic stats
-stocks = session.query(Asset).all()
+stocks = session.query(Asset).filter(Asset.user_id == user_id).all()
 stock_codes = [s.code for s in stocks]
 
 # Fetch real-time data
@@ -67,11 +71,17 @@ with col1:
     st.markdown(render_metric_card(f"{stock_count} 只", "股票池", "📋"), unsafe_allow_html=True)
 
 with col2:
-    open_signals = session.query(Signal).filter(Signal.status == SignalStatus.OPEN).count()
+    open_signals = session.query(Signal).filter(
+        Signal.status == SignalStatus.OPEN,
+        Signal.user_id == user_id
+    ).count()
     st.markdown(render_metric_card(f"{open_signals} 个", "待处理信号", "🔔"), unsafe_allow_html=True)
 
 with col3:
-    positions = session.query(PortfolioPosition).filter(PortfolioPosition.position_pct > 0).all()
+    positions = session.query(PortfolioPosition).filter(
+        PortfolioPosition.position_pct > 0,
+        PortfolioPosition.user_id == user_id
+    ).all()
     total_position = sum(p.position_pct for p in positions)
     st.markdown(render_metric_card(f"{total_position:.1f}%", "总仓位", "💼"), unsafe_allow_html=True)
 
@@ -238,7 +248,7 @@ st.info("👈 使用左侧导航栏进入各功能模块")
 st.markdown(render_footer(), unsafe_allow_html=True)
 
 # Get today's visit count
-today_visits = get_today_visits(session)
+today_visits = get_today_visits(session, user_id)
 
 # Sidebar branding
 with st.sidebar:

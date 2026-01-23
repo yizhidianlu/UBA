@@ -8,8 +8,9 @@ from ..database.models import Asset, Threshold, Market
 class StockPoolService:
     """管理股票池的增删改查"""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, user_id: int):
         self.session = session
+        self.user_id = user_id
 
     def add_stock(
         self,
@@ -26,11 +27,15 @@ class StockPoolService:
     ) -> Asset:
         """添加股票到股票池"""
         # Check if already exists
-        existing = self.session.query(Asset).filter(Asset.code == code).first()
+        existing = self.session.query(Asset).filter(
+            Asset.code == code,
+            Asset.user_id == self.user_id
+        ).first()
         if existing:
             raise ValueError(f"股票 {code} 已存在于股票池中")
 
         asset = Asset(
+            user_id=self.user_id,
             code=code,
             name=name,
             market=market,
@@ -57,7 +62,10 @@ class StockPoolService:
 
     def remove_stock(self, code: str) -> bool:
         """从股票池删除股票"""
-        asset = self.session.query(Asset).filter(Asset.code == code).first()
+        asset = self.session.query(Asset).filter(
+            Asset.code == code,
+            Asset.user_id == self.user_id
+        ).first()
         if asset:
             self.session.delete(asset)
             self.session.commit()
@@ -66,11 +74,16 @@ class StockPoolService:
 
     def get_stock(self, code: str) -> Optional[Asset]:
         """获取单只股票信息"""
-        return self.session.query(Asset).filter(Asset.code == code).first()
+        return self.session.query(Asset).filter(
+            Asset.code == code,
+            Asset.user_id == self.user_id
+        ).first()
 
     def get_all_stocks(self) -> List[Asset]:
         """获取所有股票"""
-        return self.session.query(Asset).order_by(Asset.created_at.desc()).all()
+        return self.session.query(Asset).filter(
+            Asset.user_id == self.user_id
+        ).order_by(Asset.created_at.desc()).all()
 
     def update_stock(
         self,
@@ -138,15 +151,22 @@ class StockPoolService:
 
     def get_stocks_by_market(self, market: Market) -> List[Asset]:
         """按市场筛选股票"""
-        return self.session.query(Asset).filter(Asset.market == market).all()
+        return self.session.query(Asset).filter(
+            Asset.market == market,
+            Asset.user_id == self.user_id
+        ).all()
 
     def get_stocks_by_competence(self, min_score: int = 4) -> List[Asset]:
         """获取高关注指数的股票"""
-        return self.session.query(Asset).filter(Asset.competence_score >= min_score).all()
+        return self.session.query(Asset).filter(
+            Asset.competence_score >= min_score,
+            Asset.user_id == self.user_id
+        ).all()
 
     def search_stocks(self, keyword: str) -> List[Asset]:
         """搜索股票（按代码或名称）"""
         pattern = f"%{keyword}%"
         return self.session.query(Asset).filter(
-            (Asset.code.like(pattern)) | (Asset.name.like(pattern))
+            ((Asset.code.like(pattern)) | (Asset.name.like(pattern))),
+            Asset.user_id == self.user_id
         ).all()

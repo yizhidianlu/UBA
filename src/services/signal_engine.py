@@ -10,8 +10,9 @@ from .valuation import ValuationService
 class SignalEngine:
     """信号引擎：检测PB触发并生成信号"""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, user_id: int):
         self.session = session
+        self.user_id = user_id
         self.valuation_service = ValuationService(session)
 
     def check_triggers(self, asset: Asset) -> Optional[Signal]:
@@ -34,6 +35,7 @@ class SignalEngine:
         # Check if there's already an open signal for today
         existing = self.session.query(Signal).filter(
             Signal.asset_id == asset.id,
+            Signal.user_id == self.user_id,
             Signal.date == today,
             Signal.status == SignalStatus.OPEN
         ).first()
@@ -74,6 +76,7 @@ class SignalEngine:
 
         if signal_type:
             signal = Signal(
+                user_id=self.user_id,
                 asset_id=asset.id,
                 date=today,
                 signal_type=signal_type,
@@ -129,7 +132,10 @@ class SignalEngine:
 
     def scan_all_stocks(self) -> List[Signal]:
         """扫描所有股票，检测触发信号"""
-        assets = self.session.query(Asset).filter(Asset.threshold != None).all()
+        assets = self.session.query(Asset).filter(
+            Asset.threshold != None,
+            Asset.user_id == self.user_id
+        ).all()
         signals = []
 
         for asset in assets:
@@ -142,6 +148,7 @@ class SignalEngine:
     def get_open_signals(self) -> List[Signal]:
         """获取所有未处理的信号"""
         return self.session.query(Signal).filter(
+            Signal.user_id == self.user_id,
             Signal.status == SignalStatus.OPEN
         ).order_by(Signal.date.desc()).all()
 
@@ -149,18 +156,23 @@ class SignalEngine:
         """获取今日信号"""
         today = date.today()
         return self.session.query(Signal).filter(
+            Signal.user_id == self.user_id,
             Signal.date == today
         ).order_by(Signal.created_at.desc()).all()
 
     def get_signals_by_status(self, status: SignalStatus) -> List[Signal]:
         """按状态获取信号"""
         return self.session.query(Signal).filter(
+            Signal.user_id == self.user_id,
             Signal.status == status
         ).order_by(Signal.date.desc()).all()
 
     def update_signal_status(self, signal_id: int, status: SignalStatus) -> Optional[Signal]:
         """更新信号状态"""
-        signal = self.session.query(Signal).filter(Signal.id == signal_id).first()
+        signal = self.session.query(Signal).filter(
+            Signal.id == signal_id,
+            Signal.user_id == self.user_id
+        ).first()
         if signal:
             signal.status = status
             self.session.commit()
@@ -175,7 +187,10 @@ class SignalEngine:
         from datetime import timedelta
         start_date = date.today() - timedelta(days=days)
 
-        query = self.session.query(Signal).filter(Signal.date >= start_date)
+        query = self.session.query(Signal).filter(
+            Signal.date >= start_date,
+            Signal.user_id == self.user_id
+        )
 
         if asset_id:
             query = query.filter(Signal.asset_id == asset_id)

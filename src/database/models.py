@@ -42,7 +42,8 @@ class Asset(Base):
     __tablename__ = "assets"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    code = Column(String(20), unique=True, nullable=False)  # e.g., 600519.SH, 0700.HK
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    code = Column(String(20), nullable=False)  # e.g., 600519.SH, 0700.HK
     name = Column(String(100), nullable=False)
     market = Column(SQLEnum(Market), nullable=False)
     industry = Column(String(100))
@@ -100,6 +101,7 @@ class PortfolioPosition(Base):
     __tablename__ = "portfolio_positions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     asset_id = Column(Integer, ForeignKey("assets.id"), unique=True, nullable=False)
     position_pct = Column(Float, default=0)  # 仓位百分比
     shares = Column(Integer, default=0)  # 持股数量
@@ -114,6 +116,7 @@ class Signal(Base):
     __tablename__ = "signals"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
     date = Column(Date, nullable=False)
     signal_type = Column(SQLEnum(SignalType), nullable=False)
@@ -131,6 +134,7 @@ class Action(Base):
     __tablename__ = "actions"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
     signal_id = Column(Integer, ForeignKey("signals.id"))
     action_date = Column(Date, nullable=False)
@@ -167,7 +171,8 @@ class VisitLog(Base):
     __tablename__ = "visit_logs"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    visit_date = Column(Date, nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    visit_date = Column(Date, nullable=False)
     count = Column(Integer, default=1)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -183,6 +188,7 @@ class StockCandidate(Base):
     __tablename__ = "stock_candidates"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     code = Column(String(20), nullable=False)
     name = Column(String(100), nullable=False)
     industry = Column(String(100))
@@ -209,6 +215,7 @@ class ScanProgress(Base):
     __tablename__ = "scan_progress"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     current_index = Column(Integer, default=0)      # 当前扫描到的索引
     total_stocks = Column(Integer, default=0)       # 总股票数
     last_scanned_code = Column(String(20))          # 上次扫描的股票代码
@@ -224,6 +231,7 @@ class AIAnalysisReport(Base):
     __tablename__ = "ai_analysis_reports"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     code = Column(String(20), nullable=False, index=True)  # 股票代码
     name = Column(String(100), nullable=False)             # 股票名称
     summary = Column(Text)                                  # 一句话总结

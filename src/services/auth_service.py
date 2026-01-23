@@ -7,6 +7,7 @@ import hashlib
 import os
 from typing import Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from ..database.models import User
@@ -49,6 +50,7 @@ class AuthService:
         user = User(email=normalized_email, password_hash=password_hash)
         self.session.add(user)
         self.session.commit()
+        self._claim_orphan_data(user.id)
         return AuthResult(user=user)
 
     def authenticate(self, email: str, password: str) -> Optional[AuthResult]:
@@ -60,4 +62,23 @@ class AuthService:
             return None
         user.last_login_at = datetime.now()
         self.session.commit()
+        self._claim_orphan_data(user.id)
         return AuthResult(user=user)
+
+    def _claim_orphan_data(self, user_id: int) -> None:
+        tables = [
+            'assets',
+            'portfolio_positions',
+            'signals',
+            'actions',
+            'visit_logs',
+            'stock_candidates',
+            'scan_progress',
+            'ai_analysis_reports'
+        ]
+        for table in tables:
+            self.session.execute(
+                text(f"UPDATE {table} SET user_id = :user_id WHERE user_id IS NULL"),
+                {"user_id": user_id}
+            )
+        self.session.commit()

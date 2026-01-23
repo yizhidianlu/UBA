@@ -6,7 +6,7 @@ from datetime import date, timedelta
 from src.database import get_session, init_db
 from src.database.models import Asset, Signal, Action
 from src.services import StockPoolService, ValuationService
-from src.ui import require_auth, render_auth_sidebar
+from src.ui import require_auth, render_auth_sidebar, get_current_user_id
 
 try:
     from src.services.background_scanner import get_scanner
@@ -20,10 +20,11 @@ st.title("📈 股票详情")
 init_db()
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 with st.sidebar:
     render_auth_sidebar()
     st.divider()
-stock_service = StockPoolService(session)
+stock_service = StockPoolService(session, user_id)
 valuation_service = ValuationService(session)
 
 # Stock selector
@@ -221,7 +222,8 @@ if selected_code:
             st.subheader("信号历史")
 
             signals = session.query(Signal).filter(
-                Signal.asset_id == asset.id
+                Signal.asset_id == asset.id,
+                Signal.user_id == user_id
             ).order_by(Signal.date.desc()).limit(50).all()
 
             if signals:
@@ -246,7 +248,8 @@ if selected_code:
             st.subheader("交易记录")
 
             actions = session.query(Action).filter(
-                Action.asset_id == asset.id
+                Action.asset_id == asset.id,
+                Action.user_id == user_id
             ).order_by(Action.action_date.desc()).limit(50).all()
 
             if actions:

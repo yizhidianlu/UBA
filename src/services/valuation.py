@@ -151,9 +151,12 @@ class ValuationService:
                 count += 1
         return count
 
-    def update_all_stocks(self) -> dict:
+    def update_all_stocks(self, user_id: Optional[int] = None) -> dict:
         """更新所有股票的PB数据"""
-        assets = self.session.query(Asset).all()
+        query = self.session.query(Asset)
+        if user_id is not None:
+            query = query.filter(Asset.user_id == user_id)
+        assets = query.all()
         results = {'success': [], 'failed': []}
 
         for asset in assets:

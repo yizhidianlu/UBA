@@ -13,9 +13,10 @@ from .risk_control import RiskControl
 class ActionService:
     """四动作执行与记录服务"""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, user_id: int):
         self.session = session
-        self.risk_control = RiskControl(session)
+        self.user_id = user_id
+        self.risk_control = RiskControl(session, user_id)
 
     def execute_action(
         self,
@@ -72,6 +73,7 @@ class ActionService:
 
         # Create action record
         action = Action(
+            user_id=self.user_id,
             asset_id=asset_id,
             signal_id=signal_id,
             action_date=date.today(),
@@ -106,7 +108,10 @@ class ActionService:
 
         # Update signal status if linked
         if signal_id:
-            signal = self.session.query(Signal).filter(Signal.id == signal_id).first()
+            signal = self.session.query(Signal).filter(
+                Signal.id == signal_id,
+                Signal.user_id == self.user_id
+            ).first()
             if signal:
                 signal.status = SignalStatus.DONE
 
@@ -125,7 +130,8 @@ class ActionService:
     ):
         """买入后更新持仓"""
         position = self.session.query(PortfolioPosition).filter(
-            PortfolioPosition.asset_id == asset_id
+            PortfolioPosition.asset_id == asset_id,
+            PortfolioPosition.user_id == self.user_id
         ).first()
 
         if position:
@@ -144,6 +150,7 @@ class ActionService:
             position.position_pct = new_pct
         else:
             position = PortfolioPosition(
+                user_id=self.user_id,
                 asset_id=asset_id,
                 position_pct=position_change,
                 avg_cost=price
@@ -153,7 +160,8 @@ class ActionService:
     def _update_position_after_sell(self, asset_id: int, position_change: float):
         """卖出后更新持仓"""
         position = self.session.query(PortfolioPosition).filter(
-            PortfolioPosition.asset_id == asset_id
+            PortfolioPosition.asset_id == asset_id,
+            PortfolioPosition.user_id == self.user_id
         ).first()
 
         if position:
@@ -161,7 +169,10 @@ class ActionService:
 
     def _generate_action_message(self, action: Action, risk_result=None) -> str:
         """生成动作执行消息"""
-        asset = self.session.query(Asset).filter(Asset.id == action.asset_id).first()
+        asset = self.session.query(Asset).filter(
+            Asset.id == action.asset_id,
+            Asset.user_id == self.user_id
+        ).first()
         stock_name = asset.name if asset else f"股票ID:{action.asset_id}"
 
         messages = [f"已记录 {stock_name} 的 {action.action_type.value} 动作"]
@@ -181,12 +192,16 @@ class ActionService:
 
     def ignore_signal(self, signal_id: int, reason: str) -> Signal:
         """忽略信号（不执行任何动作）"""
-        signal = self.session.query(Signal).filter(Signal.id == signal_id).first()
+        signal = self.session.query(Signal).filter(
+            Signal.id == signal_id,
+            Signal.user_id == self.user_id
+        ).first()
         if not signal:
             raise ValueError(f"信号不存在: {signal_id}")
 
         # Create a HOLD action to record the decision
         action = Action(
+            user_id=self.user_id,
             asset_id=signal.asset_id,
             signal_id=signal_id,
             action_date=date.today(),
@@ -213,7 +228,10 @@ class ActionService:
         from datetime import timedelta
         start_date = date.today() - timedelta(days=days)
 
-        query = self.session.query(Action).filter(Action.action_date >= start_date)
+        query = self.session.query(Action).filter(
+            Action.action_date >= start_date,
+            Action.user_id == self.user_id
+        )
 
         if asset_id:
             query = query.filter(Action.asset_id == asset_id)
@@ -229,7 +247,8 @@ class ActionService:
 
         actions = self.session.query(Action).filter(
             Action.action_date >= start_date,
-            Action.action_type != ActionType.HOLD
+            Action.action_type != ActionType.HOLD,
+            Action.user_id == self.user_id
         ).all()
 
         if not actions:
@@ -261,6 +280,6 @@ class ActionService:
 
     def get_recent_actions(self, limit: int = 10) -> List[Action]:
         """获取最近的动作"""
-        return self.session.query(Action).order_by(
-            Action.created_at.desc()
-        ).limit(limit).all()
+        return self.session.query(Action).filter(
+            Action.user_id == self.user_id
+        ).order_by(Action.created_at.desc()).limit(limit).all()

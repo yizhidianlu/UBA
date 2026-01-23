@@ -26,8 +26,9 @@ STOCK_LIST_CACHE = os.path.join(CACHE_DIR, 'stock_list_cache.json')
 class BackgroundScanner:
     """后台股票扫描器 - 自动扫描A股寻找低估股票"""
 
-    def __init__(self, enable_ai_scoring: bool = True):
+    def __init__(self, user_id: int, enable_ai_scoring: bool = True):
         self.session = requests.Session()
+        self.user_id = user_id
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
             'Referer': 'https://quote.eastmoney.com/'
@@ -366,9 +367,12 @@ class BackgroundScanner:
 
         try:
             # 获取或创建扫描进度
-            progress = db_session.query(ScanProgress).first()
+            progress = db_session.query(ScanProgress).filter(
+                ScanProgress.user_id == self.user_id
+            ).first()
             if not progress:
                 progress = ScanProgress(
+                    user_id=self.user_id,
                     current_index=0,
                     is_running=True,
                     scan_interval=scan_interval,
@@ -402,7 +406,11 @@ class BackgroundScanner:
             print(f"共获取 {len(stocks)} 只股票")
 
             # 获取已在股票池中的股票
-            existing_codes = set(a.code for a in db_session.query(Asset.code).all())
+            existing_codes = set(
+                a.code for a in db_session.query(Asset.code).filter(
+                    Asset.user_id == self.user_id
+                ).all()
+            )
 
             # 从上次位置继续扫描
             start_index = progress.current_index
@@ -426,7 +434,8 @@ class BackgroundScanner:
                 # 跳过已在备选池的
                 existing_candidate = db_session.query(StockCandidate).filter(
                     StockCandidate.code == full_code,
-                    StockCandidate.status == CandidateStatus.PENDING
+                    StockCandidate.status == CandidateStatus.PENDING,
+                    StockCandidate.user_id == self.user_id
                 ).first()
                 if existing_candidate:
                     progress.current_index = i + 1
@@ -456,6 +465,7 @@ class BackgroundScanner:
 
                         # 添加到备选池
                         candidate = StockCandidate(
+                            user_id=self.user_id,
                             code=analysis['code'],
                             name=analysis['name'],
                             industry=analysis['industry'],
@@ -510,7 +520,9 @@ class BackgroundScanner:
         """获取当前扫描进度"""
         db_session = get_session()
         try:
-            progress = db_session.query(ScanProgress).first()
+            progress = db_session.query(ScanProgress).filter(
+                ScanProgress.user_id == self.user_id
+            ).first()
             if progress:
                 return {
                     'current_index': progress.current_index,
@@ -529,7 +541,9 @@ class BackgroundScanner:
         """获取备选池股票"""
         db_session = get_session()
         try:
-            query = db_session.query(StockCandidate)
+            query = db_session.query(StockCandidate).filter(
+                StockCandidate.user_id == self.user_id
+            )
             if status:
                 query = query.filter(StockCandidate.status == status)
             candidates = query.order_by(StockCandidate.pb_distance_pct).all()
@@ -550,7 +564,8 @@ class BackgroundScanner:
         db_session = get_session()
         try:
             candidate = db_session.query(StockCandidate).filter(
-                StockCandidate.id == candidate_id
+                StockCandidate.id == candidate_id,
+                StockCandidate.user_id == self.user_id
             ).first()
             if candidate:
                 candidate.status = status
@@ -563,7 +578,9 @@ class BackgroundScanner:
         """清空备选池"""
         db_session = get_session()
         try:
-            query = db_session.query(StockCandidate)
+            query = db_session.query(StockCandidate).filter(
+                StockCandidate.user_id == self.user_id
+            )
             if status:
                 query = query.filter(StockCandidate.status == status)
             query.delete()
@@ -618,6 +635,7 @@ class BackgroundScanner:
                 # 查找未评分的备选股票，按添加时间从早到晚排序
                 unscored = db_session.query(StockCandidate).filter(
                     StockCandidate.status == CandidateStatus.PENDING,
+                    StockCandidate.user_id == self.user_id,
                     (StockCandidate.ai_score == None) | (StockCandidate.ai_score == 0)
                 ).order_by(StockCandidate.scanned_at.asc()).first()
 
@@ -655,12 +673,11 @@ class BackgroundScanner:
 
 
 # 全局扫描器实例
-_scanner_instance: Optional[BackgroundScanner] = None
+_scanner_instance: dict[int, BackgroundScanner] = {}
 
 
-def get_scanner() -> BackgroundScanner:
+def get_scanner(user_id: int) -> BackgroundScanner:
     """获取全局扫描器实例"""
-    global _scanner_instance
-    if _scanner_instance is None:
-        _scanner_instance = BackgroundScanner()
-    return _scanner_instance
+    if user_id not in _scanner_instance:
+        _scanner_instance[user_id] = BackgroundScanner(user_id)
+    return _scanner_instance[user_id]

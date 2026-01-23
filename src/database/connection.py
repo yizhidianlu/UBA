@@ -55,24 +55,26 @@ def run_migrations(db_path: str):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
-    # Migration 1: Add new columns to stock_candidates table
-    cursor.execute("PRAGMA table_info(stock_candidates)")
-    existing_columns = {row[1] for row in cursor.fetchall()}
+    def add_column_if_missing(table: str, column: str, col_type: str) -> None:
+        cursor.execute(f"PRAGMA table_info({table})")
+        existing = {row[1] for row in cursor.fetchall()}
+        if column not in existing:
+            try:
+                cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+                print(f"Migration: Added column {column} to {table}")
+            except Exception as exc:
+                print(f"Migration warning: {exc}")
 
+    # Migration 1: Add new columns to stock_candidates table
     stock_candidate_migrations = [
         ('recommended_add_pb', 'REAL'),
         ('recommended_sell_pb', 'REAL'),
         ('ai_score', 'INTEGER'),
-        ('ai_suggestion', 'TEXT'),
+        ('ai_suggestion', 'TEXT')
     ]
 
     for col_name, col_type in stock_candidate_migrations:
-        if col_name not in existing_columns:
-            try:
-                cursor.execute(f'ALTER TABLE stock_candidates ADD COLUMN {col_name} {col_type}')
-                print(f'Migration: Added column {col_name} to stock_candidates')
-            except Exception as e:
-                print(f'Migration warning: {e}')
+        add_column_if_missing('stock_candidates', col_name, col_type)
 
     # Migration 2: Create ai_analysis_reports table if not exists
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='ai_analysis_reports'")
@@ -115,6 +117,102 @@ def run_migrations(db_path: str):
         ''')
         cursor.execute('CREATE INDEX IF NOT EXISTS ix_users_email ON users(email)')
         print('Migration: Created users table')
+
+    # Migration 4: Add user_id columns for multi-user isolation
+    user_scoped_tables = [
+        'assets',
+        'portfolio_positions',
+        'signals',
+        'actions',
+        'visit_logs',
+        'stock_candidates',
+        'scan_progress',
+        'ai_analysis_reports'
+    ]
+
+    for table in user_scoped_tables:
+        add_column_if_missing(table, 'user_id', 'INTEGER')
+
+    # Migration 5: Remove unique constraint on assets.code (allow per-user duplicates)
+    cursor.execute("PRAGMA index_list(assets)")
+    indexes = cursor.fetchall()
+    has_unique_code = False
+    for idx in indexes:
+        index_name = idx[1]
+        is_unique = idx[2]
+        if is_unique:
+            cursor.execute(f"PRAGMA index_info({index_name})")
+            columns = [row[2] for row in cursor.fetchall()]
+            if columns == ['code']:
+                has_unique_code = True
+                break
+
+    if has_unique_code:
+        cursor.execute("PRAGMA foreign_keys=OFF")
+        cursor.execute("ALTER TABLE assets RENAME TO assets_old")
+        cursor.execute('''
+            CREATE TABLE assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                code VARCHAR(20) NOT NULL,
+                name VARCHAR(100) NOT NULL,
+                market VARCHAR(20) NOT NULL,
+                industry VARCHAR(100),
+                tags VARCHAR(500),
+                competence_score INTEGER DEFAULT 3,
+                ai_score INTEGER,
+                ai_suggestion TEXT,
+                notes TEXT,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            INSERT INTO assets (
+                id, user_id, code, name, market, industry, tags, competence_score,
+                ai_score, ai_suggestion, notes, created_at, updated_at
+            )
+            SELECT id, user_id, code, name, market, industry, tags, competence_score,
+                   ai_score, ai_suggestion, notes, created_at, updated_at
+            FROM assets_old
+        ''')
+        cursor.execute("DROP TABLE assets_old")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        print('Migration: Removed unique constraint on assets.code')
+
+    # Migration 6: Remove unique constraint on visit_logs.visit_date
+    cursor.execute("PRAGMA index_list(visit_logs)")
+    visit_indexes = cursor.fetchall()
+    has_unique_visit_date = False
+    for idx in visit_indexes:
+        index_name = idx[1]
+        is_unique = idx[2]
+        if is_unique:
+            cursor.execute(f"PRAGMA index_info({index_name})")
+            columns = [row[2] for row in cursor.fetchall()]
+            if columns == ['visit_date']:
+                has_unique_visit_date = True
+                break
+
+    if has_unique_visit_date:
+        cursor.execute("PRAGMA foreign_keys=OFF")
+        cursor.execute("ALTER TABLE visit_logs RENAME TO visit_logs_old")
+        cursor.execute('''
+            CREATE TABLE visit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                visit_date DATE NOT NULL,
+                count INTEGER DEFAULT 1,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+        cursor.execute('''
+            INSERT INTO visit_logs (id, user_id, visit_date, count, updated_at)
+            SELECT id, user_id, visit_date, count, updated_at FROM visit_logs_old
+        ''')
+        cursor.execute("DROP TABLE visit_logs_old")
+        cursor.execute("PRAGMA foreign_keys=ON")
+        print('Migration: Removed unique constraint on visit_logs.visit_date')
 
     conn.commit()
     conn.close()

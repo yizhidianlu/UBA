@@ -18,17 +18,21 @@ except ImportError as e:
     StockCandidate = None
     ScanProgress = None
     CandidateStatus = None
+    get_scanner = None
 
 from src.services import StockPoolService, AIAnalyzer
 from src.ui import (
     GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer,
-    require_auth, render_auth_sidebar
+    require_auth, render_auth_sidebar, get_current_user_id
 )
 
 
-def sync_ai_report_to_database(session, code: str, name: str, ai_score: int, ai_suggestion: str):
+def sync_ai_report_to_database(session, user_id: int, code: str, name: str, ai_score: int, ai_suggestion: str):
     """同步AI评分到AIAnalysisReport表"""
-    existing = session.query(AIAnalysisReport).filter(AIAnalysisReport.code == code).first()
+    existing = session.query(AIAnalysisReport).filter(
+        AIAnalysisReport.code == code,
+        AIAnalysisReport.user_id == user_id
+    ).first()
     if existing:
         # 更新现有记录
         existing.ai_score = ai_score
@@ -37,6 +41,7 @@ def sync_ai_report_to_database(session, code: str, name: str, ai_score: int, ai_
     else:
         # 创建新记录（简化版，只保存评分和摘要）
         new_report = AIAnalysisReport(
+            user_id=user_id,
             code=code,
             name=name,
             summary=ai_suggestion,
@@ -61,11 +66,12 @@ st.markdown(render_header("智能选股", "后台扫描全市场低估股票", "
 init_db()
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 with st.sidebar:
     render_auth_sidebar()
     st.divider()
-stock_service = StockPoolService(session)
-scanner = get_scanner() if SCANNER_AVAILABLE else None
+stock_service = StockPoolService(session, user_id)
+scanner = get_scanner(user_id) if SCANNER_AVAILABLE else None
 
 st.divider()
 
@@ -213,7 +219,8 @@ st.markdown("### 📋 备选池")
 
 # Get candidates
 candidates = session.query(StockCandidate).filter(
-    StockCandidate.status == CandidateStatus.PENDING
+    StockCandidate.status == CandidateStatus.PENDING,
+    StockCandidate.user_id == user_id
 ).order_by(StockCandidate.pb_distance_pct).all()
 
 if candidates:
@@ -294,7 +301,7 @@ if candidates:
                                 )
                                 # 同步 AI 评分到 AIAnalysisReport 表
                                 sync_ai_report_to_database(
-                                    session, c.code, c.name,
+                                    session, user_id, c.code, c.name,
                                     c.ai_score, c.ai_suggestion
                                 )
                             c.status = CandidateStatus.ADDED
@@ -320,7 +327,8 @@ if candidates:
         with col3:
             if st.button("🧹 清空备选池", use_container_width=True):
                 session.query(StockCandidate).filter(
-                    StockCandidate.status == CandidateStatus.PENDING
+                    StockCandidate.status == CandidateStatus.PENDING,
+                    StockCandidate.user_id == user_id
                 ).delete()
                 session.commit()
                 st.info("备选池已清空")
@@ -360,19 +368,25 @@ with st.expander("📜 历史记录"):
 
     with col1:
         added = session.query(StockCandidate).filter(
-            StockCandidate.status == CandidateStatus.ADDED
+            StockCandidate.status == CandidateStatus.ADDED,
+            StockCandidate.user_id == user_id
         ).count()
         st.metric("已添加", f"{added} 只")
 
     with col2:
         ignored = session.query(StockCandidate).filter(
-            StockCandidate.status == CandidateStatus.IGNORED
+            StockCandidate.status == CandidateStatus.IGNORED,
+            StockCandidate.user_id == user_id
         ).count()
         st.metric("已忽略", f"{ignored} 只")
 
     if st.button("🗑️ 清空所有历史"):
-        session.query(StockCandidate).delete()
-        session.query(ScanProgress).delete()
+        session.query(StockCandidate).filter(
+            StockCandidate.user_id == user_id
+        ).delete()
+        session.query(ScanProgress).filter(
+            ScanProgress.user_id == user_id
+        ).delete()
         session.commit()
         st.success("历史已清空")
         st.rerun()

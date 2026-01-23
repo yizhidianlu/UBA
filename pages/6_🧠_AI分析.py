@@ -7,7 +7,7 @@ from src.database.models import Asset, AIAnalysisReport
 from src.services import StockPoolService, AIAnalyzer, RealtimeService, ValuationService
 from src.ui import (
     GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer, render_alert,
-    require_auth, render_auth_sidebar
+    require_auth, render_auth_sidebar, get_current_user_id
 )
 
 st.set_page_config(
@@ -26,10 +26,11 @@ st.markdown(render_header("AI 基本面分析", "使用 Qwen3-max 生成专业�
 init_db()
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 with st.sidebar:
     render_auth_sidebar()
     st.divider()
-stock_service = StockPoolService(session)
+stock_service = StockPoolService(session, user_id)
 valuation_service = ValuationService(session)
 realtime_service = RealtimeService()
 
@@ -55,7 +56,8 @@ st.divider()
 def get_historical_report(code: str):
     """获取历史分析报告"""
     return session.query(AIAnalysisReport).filter(
-        AIAnalysisReport.code == code
+        AIAnalysisReport.code == code,
+        AIAnalysisReport.user_id == user_id
     ).order_by(AIAnalysisReport.created_at.desc()).first()
 
 
@@ -63,7 +65,8 @@ def save_report(report, fundamental):
     """保存分析报告到数据库"""
     # 检查是否已存在该股票的报告
     existing = session.query(AIAnalysisReport).filter(
-        AIAnalysisReport.code == fundamental.code
+        AIAnalysisReport.code == fundamental.code,
+        AIAnalysisReport.user_id == user_id
     ).first()
 
     if existing:
@@ -85,6 +88,7 @@ def save_report(report, fundamental):
     else:
         # 创建新报告
         new_report = AIAnalysisReport(
+            user_id=user_id,
             code=fundamental.code,
             name=fundamental.name,
             summary=report.summary,
@@ -383,7 +387,9 @@ if selected_code:
 st.divider()
 st.markdown("### 📚 历史分析报告")
 
-all_reports = session.query(AIAnalysisReport).order_by(AIAnalysisReport.updated_at.desc()).limit(10).all()
+all_reports = session.query(AIAnalysisReport).filter(
+    AIAnalysisReport.user_id == user_id
+).order_by(AIAnalysisReport.updated_at.desc()).limit(10).all()
 
 if all_reports:
     for report in all_reports:

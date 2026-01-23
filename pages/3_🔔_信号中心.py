@@ -5,7 +5,7 @@ from datetime import date
 from src.database import get_session, init_db
 from src.database.models import Asset, Signal, SignalStatus, ActionType
 from src.services import SignalEngine, ActionService, RiskControl
-from src.ui import require_auth, render_auth_sidebar
+from src.ui import require_auth, render_auth_sidebar, get_current_user_id
 
 st.set_page_config(page_title="信号中心 - 不败之地", page_icon="🔔", layout="wide")
 st.title("🔔 信号中心")
@@ -13,12 +13,13 @@ st.title("🔔 信号中心")
 init_db()
 session = get_session()
 require_auth(session)
+user_id = get_current_user_id()
 with st.sidebar:
     render_auth_sidebar()
     st.divider()
-signal_engine = SignalEngine(session)
-action_service = ActionService(session)
-risk_control = RiskControl(session)
+signal_engine = SignalEngine(session, user_id)
+action_service = ActionService(session, user_id)
+risk_control = RiskControl(session, user_id)
 
 # Tabs for different signal views
 tab1, tab2, tab3 = st.tabs(["待处理", "已处理", "已忽略"])
@@ -29,7 +30,10 @@ with tab1:
     # 过滤：只显示关注指数评分 >= 4 的股票
     filtered_signals = []
     for signal in open_signals:
-        asset = session.query(Asset).filter(Asset.id == signal.asset_id).first()
+        asset = session.query(Asset).filter(
+            Asset.id == signal.asset_id,
+            Asset.user_id == user_id
+        ).first()
         if asset and asset.competence_score and asset.competence_score >= 4:
             filtered_signals.append((signal, asset))
 
@@ -190,7 +194,10 @@ with tab1:
                     # 统计高评分信号数量
                     high_score_count = 0
                     for sig in new_signals:
-                        a = session.query(Asset).filter(Asset.id == sig.asset_id).first()
+                        a = session.query(Asset).filter(
+                            Asset.id == sig.asset_id,
+                            Asset.user_id == user_id
+                        ).first()
                         if a and a.competence_score and a.competence_score >= 4:
                             high_score_count += 1
                     st.success(f"发现 {len(new_signals)} 个新信号，其中 {high_score_count} 个来自高评分股票!")
@@ -204,7 +211,10 @@ with tab2:
     if done_signals:
         data = []
         for signal in done_signals:
-            asset = session.query(Asset).filter(Asset.id == signal.asset_id).first()
+            asset = session.query(Asset).filter(
+                Asset.id == signal.asset_id,
+                Asset.user_id == user_id
+            ).first()
             data.append({
                 "日期": signal.date,
                 "股票": asset.name if asset else "-",
@@ -225,7 +235,10 @@ with tab3:
     if ignored_signals:
         data = []
         for signal in ignored_signals:
-            asset = session.query(Asset).filter(Asset.id == signal.asset_id).first()
+            asset = session.query(Asset).filter(
+                Asset.id == signal.asset_id,
+                Asset.user_id == user_id
+            ).first()
             data.append({
                 "日期": signal.date,
                 "股票": asset.name if asset else "-",
