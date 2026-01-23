@@ -2,7 +2,7 @@
 import streamlit as st
 from datetime import datetime, date, timedelta
 from src.database import get_session
-from src.database.models import Asset
+from src.database.models import Asset, AIAnalysisReport
 from src.services import StockPoolService, AIAnalyzer, RealtimeService, ValuationService
 from src.ui import GLOBAL_CSS, APP_NAME_CN, APP_NAME_EN, render_header, render_footer, render_alert
 
@@ -26,13 +26,112 @@ realtime_service = RealtimeService()
 
 ai_analyzer = AIAnalyzer()
 
-# Session state for reports
+# Session state
 if 'current_report' not in st.session_state:
     st.session_state.current_report = None
 if 'fundamental_data' not in st.session_state:
     st.session_state.fundamental_data = None
+if 'show_history' not in st.session_state:
+    st.session_state.show_history = True
 
 st.divider()
+
+
+def get_historical_report(code: str):
+    """获取历史分析报告"""
+    return session.query(AIAnalysisReport).filter(
+        AIAnalysisReport.code == code
+    ).order_by(AIAnalysisReport.created_at.desc()).first()
+
+
+def save_report(report, fundamental):
+    """保存分析报告到数据库"""
+    # 检查是否已存在该股票的报告
+    existing = session.query(AIAnalysisReport).filter(
+        AIAnalysisReport.code == fundamental.code
+    ).first()
+
+    if existing:
+        # 更新现有报告
+        existing.name = fundamental.name
+        existing.summary = report.summary
+        existing.valuation_analysis = report.valuation_analysis
+        existing.fundamental_analysis = report.fundamental_analysis
+        existing.risk_analysis = report.risk_analysis
+        existing.investment_suggestion = report.investment_suggestion
+        existing.pb_recommendation = report.pb_recommendation
+        existing.full_report = report.full_report
+        existing.ai_score = report.ai_score
+        existing.price_at_report = fundamental.current_price
+        existing.pb_at_report = fundamental.pb
+        existing.pe_at_report = fundamental.pe_ttm
+        existing.market_cap_at_report = fundamental.market_cap
+        existing.updated_at = datetime.now()
+    else:
+        # 创建新报告
+        new_report = AIAnalysisReport(
+            code=fundamental.code,
+            name=fundamental.name,
+            summary=report.summary,
+            valuation_analysis=report.valuation_analysis,
+            fundamental_analysis=report.fundamental_analysis,
+            risk_analysis=report.risk_analysis,
+            investment_suggestion=report.investment_suggestion,
+            pb_recommendation=report.pb_recommendation,
+            full_report=report.full_report,
+            ai_score=report.ai_score,
+            price_at_report=fundamental.current_price,
+            pb_at_report=fundamental.pb,
+            pe_at_report=fundamental.pe_ttm,
+            market_cap_at_report=fundamental.market_cap
+        )
+        session.add(new_report)
+
+    session.commit()
+
+
+def generate_new_report(selected_code, include_pb_history=True):
+    """生成新的AI分析报告"""
+    fundamental = ai_analyzer.fetch_fundamental_data(selected_code)
+
+    if not fundamental:
+        return None, "无法获取股票基本面数据，请检查代码是否正确"
+
+    # Get PB history if available
+    pb_history = None
+    threshold_buy = None
+    threshold_add = None
+    threshold_sell = None
+
+    if include_pb_history:
+        stock = stock_service.get_stock(selected_code)
+        if stock:
+            start_date = date.today() - timedelta(days=5 * 365)
+            valuations = valuation_service.get_pb_history(stock.id, start_date=start_date)
+            if valuations:
+                pb_history = [{"date": v.date, "pb": v.pb} for v in valuations if v.pb]
+
+            if stock.threshold:
+                threshold_buy = stock.threshold.buy_pb
+                threshold_add = stock.threshold.add_pb
+                threshold_sell = stock.threshold.sell_pb
+
+    report = ai_analyzer.generate_analysis_report(
+        fundamental=fundamental,
+        pb_history=pb_history,
+        threshold_buy=threshold_buy,
+        threshold_add=threshold_add,
+        threshold_sell=threshold_sell
+    )
+
+    if report:
+        # 保存报告
+        save_report(report, fundamental)
+        return {"report": report, "fundamental": fundamental}, None
+    else:
+        error_msg = getattr(ai_analyzer, 'last_error', None) or "未知错误"
+        return None, f"AI 分析报告生成失败: {error_msg}"
+
 
 # ==================== Stock Selection ====================
 col1, col2 = st.columns([2, 1])
@@ -40,7 +139,6 @@ col1, col2 = st.columns([2, 1])
 with col1:
     st.markdown("### 📊 选择分析对象")
 
-    # Option 1: Select from stock pool
     stocks = stock_service.get_all_stocks()
 
     tab1, tab2 = st.tabs(["从股票池选择", "输入股票代码"])
@@ -69,148 +167,61 @@ with col1:
 
 with col2:
     st.markdown("### ⚙️ 分析选项")
-
-    analysis_type = st.radio(
-        "分析类型",
-        ["完整报告", "快速分析"],
-        help="完整报告包含详细的估值、基本面和风险分析"
-    )
-
     include_pb_history = st.checkbox("包含PB历史分析", value=True)
 
 st.divider()
 
-# ==================== Generate Analysis ====================
-if st.button("🚀 生成 AI 分析报告", type="primary", use_container_width=True):
-    if not selected_code:
-        st.error("请先选择或输入股票代码")
-    else:
-        with st.spinner("正在获取数据并生成分析报告，请稍候..."):
-            try:
-                # Fetch fundamental data
-                fundamental = ai_analyzer.fetch_fundamental_data(selected_code)
+# ==================== Check Historical Report ====================
+if selected_code:
+    historical_report = get_historical_report(selected_code)
 
-                if not fundamental:
-                    st.error("无法获取股票基本面数据，请检查代码是否正确")
-                else:
-                    st.session_state.fundamental_data = fundamental
+    if historical_report:
+        # 有历史报告
+        report_age = datetime.now() - historical_report.updated_at
+        days_old = report_age.days
 
-                    if analysis_type == "快速分析":
-                        # Quick analysis
-                        quick_result = ai_analyzer.quick_analysis(selected_code)
-                        if quick_result:
-                            st.session_state.current_report = {
-                                "type": "quick",
-                                "content": quick_result,
-                                "fundamental": fundamental
-                            }
-                        else:
-                            error_msg = getattr(ai_analyzer, 'last_error', None) or "未知错误"
-                            st.markdown(render_alert(f"AI 分析生成失败: {error_msg}", "danger"), unsafe_allow_html=True)
+        # 显示历史报告信息
+        col1, col2, col3 = st.columns([2, 1, 1])
+
+        with col1:
+            st.markdown(f"### 📄 {historical_report.name} 分析报告")
+            if days_old == 0:
+                time_str = "今天"
+            elif days_old == 1:
+                time_str = "昨天"
+            else:
+                time_str = f"{days_old} 天前"
+
+            st.caption(f"📅 报告生成时间: {historical_report.updated_at.strftime('%Y-%m-%d %H:%M')} ({time_str})")
+
+            # 报告时的数据快照
+            if historical_report.price_at_report:
+                st.caption(
+                    f"📊 报告时数据: 价格 ¥{historical_report.price_at_report:.2f} | "
+                    f"PB {historical_report.pb_at_report:.2f if historical_report.pb_at_report else 'N/A'} | "
+                    f"PE {historical_report.pe_at_report:.2f if historical_report.pe_at_report else 'N/A'}"
+                )
+
+        with col2:
+            if historical_report.ai_score:
+                st.metric("AI 评分", f"{'⭐' * historical_report.ai_score} ({historical_report.ai_score}分)")
+
+        with col3:
+            if st.button("🔄 更新报告", type="primary", use_container_width=True):
+                with st.spinner("正在生成新的分析报告..."):
+                    result, error = generate_new_report(selected_code, include_pb_history)
+                    if result:
+                        st.success("✅ 报告已更新！")
+                        st.rerun()
                     else:
-                        # Full report
-                        # Get PB history if available
-                        pb_history = None
-                        threshold_buy = None
-                        threshold_add = None
-                        threshold_sell = None
+                        st.error(error)
 
-                        if include_pb_history:
-                            # Try to get from database first
-                            stock = stock_service.get_stock(selected_code)
-                            if stock:
-                                start_date = date.today() - timedelta(days=5*365)
-                                valuations = valuation_service.get_pb_history(stock.id, start_date=start_date)
-                                if valuations:
-                                    pb_history = [{"date": v.date, "pb": v.pb} for v in valuations if v.pb]
+        st.divider()
 
-                                if stock.threshold:
-                                    threshold_buy = stock.threshold.buy_pb
-                                    threshold_add = stock.threshold.add_pb
-                                    threshold_sell = stock.threshold.sell_pb
-
-                        report = ai_analyzer.generate_analysis_report(
-                            fundamental=fundamental,
-                            pb_history=pb_history,
-                            threshold_buy=threshold_buy,
-                            threshold_add=threshold_add,
-                            threshold_sell=threshold_sell
-                        )
-
-                        if report:
-                            st.session_state.current_report = {
-                                "type": "full",
-                                "report": report,
-                                "fundamental": fundamental
-                            }
-                        else:
-                            error_msg = getattr(ai_analyzer, 'last_error', None) or "未知错误"
-                            st.markdown(render_alert(f"AI 分析报告生成失败: {error_msg}", "danger"), unsafe_allow_html=True)
-
-            except Exception as e:
-                st.error(f"分析过程出错: {e}")
-
-# ==================== Display Results ====================
-if st.session_state.current_report:
-    report_data = st.session_state.current_report
-    fundamental = report_data.get("fundamental")
-
-    st.divider()
-
-    # Display fundamental metrics
-    st.markdown(f"### 📈 {fundamental.name} ({fundamental.code}) - 基本面数据")
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    with col1:
-        st.metric("当前价格", f"¥{fundamental.current_price:.2f}" if fundamental.current_price else "N/A")
-    with col2:
-        st.metric("市盈率 PE", f"{fundamental.pe_ttm:.2f}" if fundamental.pe_ttm else "N/A")
-    with col3:
-        st.metric("市净率 PB", f"{fundamental.pb:.2f}" if fundamental.pb else "N/A")
-    with col4:
-        st.metric("市值(亿)", f"{fundamental.market_cap:.0f}" if fundamental.market_cap else "N/A")
-    with col5:
-        st.metric("行业", fundamental.industry or "N/A")
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    with col1:
-        roe_display = f"{fundamental.roe:.2f}%" if fundamental.roe else "N/A"
-        st.metric("ROE", roe_display)
-    with col2:
-        gm_display = f"{fundamental.gross_margin:.2f}%" if fundamental.gross_margin else "N/A"
-        st.metric("毛利率", gm_display)
-    with col3:
-        dr_display = f"{fundamental.debt_ratio:.2f}%" if fundamental.debt_ratio else "N/A"
-        st.metric("资产负债率", dr_display)
-    with col4:
-        rev_display = f"{fundamental.revenue_yoy:+.2f}%" if fundamental.revenue_yoy else "N/A"
-        st.metric("营收同比", rev_display)
-    with col5:
-        profit_display = f"{fundamental.profit_yoy:+.2f}%" if fundamental.profit_yoy else "N/A"
-        st.metric("利润同比", profit_display)
-
-    st.divider()
-
-    # Display AI analysis
-    if report_data["type"] == "quick":
-        st.markdown("### 🤖 AI 快速分析")
-        st.markdown(f"""
-        <div class="metric-card">
-            {report_data["content"]}
-        </div>
-        """, unsafe_allow_html=True)
-
-    else:
-        report = report_data["report"]
-
-        st.markdown("### 🤖 AI 投资分析报告")
-        st.caption(f"生成时间: {report.generated_at.strftime('%Y-%m-%d %H:%M:%S')}")
-
+        # 显示报告内容
         # Summary
         st.markdown("#### 💡 一句话总结")
-        st.markdown(render_alert(report.summary, "info", "💡"), unsafe_allow_html=True)
+        st.markdown(render_alert(historical_report.summary or "暂无总结", "info", "💡"), unsafe_allow_html=True)
 
         # Tabs for different sections
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -224,104 +235,92 @@ if st.session_state.current_report:
         with tab1:
             st.markdown(f"""
             <div class="metric-card">
-                {report.valuation_analysis}
+                {historical_report.valuation_analysis or "暂无估值分析"}
             </div>
             """, unsafe_allow_html=True)
 
         with tab2:
             st.markdown(f"""
             <div class="metric-card">
-                {report.fundamental_analysis}
+                {historical_report.fundamental_analysis or "暂无基本面分析"}
             </div>
             """, unsafe_allow_html=True)
 
         with tab3:
             st.markdown(f"""
             <div class="metric-card">
-                {report.risk_analysis}
+                {historical_report.risk_analysis or "暂无风险分析"}
             </div>
             """, unsafe_allow_html=True)
 
         with tab4:
             st.markdown(f"""
             <div class="metric-card">
-                {report.investment_suggestion}
+                {historical_report.investment_suggestion or "暂无投资建议"}
             </div>
             """, unsafe_allow_html=True)
 
         with tab5:
             st.markdown(f"""
             <div class="metric-card">
-                {report.pb_recommendation}
+                {historical_report.pb_recommendation or "暂无PB建议"}
             </div>
             """, unsafe_allow_html=True)
 
         # Full report expander
         with st.expander("📄 查看完整报告", expanded=False):
-            st.markdown(report.full_report)
+            st.markdown(historical_report.full_report or "暂无完整报告")
 
-    # Action buttons
-    st.divider()
-    col1, col2, col3 = st.columns(3)
+    else:
+        # 没有历史报告
+        st.info(f"📋 暂无 {selected_code} 的分析报告")
 
-    with col1:
-        if st.button("🔄 重新分析", use_container_width=True):
-            st.session_state.current_report = None
-            st.rerun()
+        if st.button("🚀 生成 AI 分析报告", type="primary", use_container_width=True):
+            with st.spinner("正在获取数据并生成分析报告，请稍候..."):
+                result, error = generate_new_report(selected_code, include_pb_history)
+                if result:
+                    st.success("✅ 报告生成成功！")
+                    st.rerun()
+                else:
+                    st.error(error)
 
-    with col2:
-        # Check if stock is in pool
-        stock_in_pool = stock_service.get_stock(fundamental.code)
-        if not stock_in_pool:
-            if st.button("➕ 添加到股票池", use_container_width=True):
-                st.info("请前往股票池页面添加该股票")
-
-    with col3:
-        if st.button("📋 复制报告", use_container_width=True):
-            if report_data["type"] == "full":
-                st.code(report_data["report"].full_report)
-            else:
-                st.code(report_data["content"])
-
-# ==================== Recent Analyses ====================
+# ==================== All Reports History ====================
 st.divider()
-st.markdown("### 📚 股票池快速分析")
+st.markdown("### 📚 历史分析报告")
 
-if stocks:
-    # Get real-time data
-    stock_codes = [s.code for s in stocks]
-    realtime_data = realtime_service.get_batch_quotes(stock_codes)
+all_reports = session.query(AIAnalysisReport).order_by(AIAnalysisReport.updated_at.desc()).limit(10).all()
 
-    cols = st.columns(3)
+if all_reports:
+    for report in all_reports:
+        report_age = datetime.now() - report.updated_at
+        days_old = report_age.days
 
-    for idx, stock in enumerate(stocks[:6]):  # Show max 6 stocks
-        col = cols[idx % 3]
+        col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
 
-        with col:
-            quote = realtime_data.get(stock.code)
+        with col1:
+            st.markdown(f"**{report.name}** ({report.code})")
 
-            change_color = "#E53935" if quote and quote.change_pct > 0 else "#43A047" if quote and quote.change_pct < 0 else "#666"
-            change_icon = "▲" if quote and quote.change_pct > 0 else "▼" if quote and quote.change_pct < 0 else "―"
+        with col2:
+            if report.ai_score and report.ai_score > 0:
+                st.markdown(f"{'⭐' * report.ai_score}")
+            else:
+                st.markdown("-")
 
-            st.markdown(f"""
-            <div class="metric-card" style="margin-bottom: 1rem;">
-                <strong>{stock.name}</strong> <span style="color: #666;">({stock.code})</span>
-                {"<p style='margin: 0.5rem 0; color: #666;'>价格: ¥" + f"{quote.price:.2f}" + f" <span style='color: {change_color};'>{change_icon} {quote.change_pct:+.2f}%</span></p>" if quote else ""}
-                {"<p style='margin: 0; color: #666;'>PB: " + f"{quote.pb:.2f}</p>" if quote and quote.pb else ""}
-            </div>
-            """, unsafe_allow_html=True)
+        with col3:
+            if days_old == 0:
+                st.caption("今天")
+            elif days_old == 1:
+                st.caption("昨天")
+            else:
+                st.caption(f"{days_old}天前")
 
-            if st.button(f"分析 {stock.name}", key=f"analyze_{stock.code}", use_container_width=True):
-                with st.spinner(f"正在分析 {stock.name}..."):
-                    quick_result = ai_analyzer.quick_analysis(stock.code)
-                    if quick_result:
-                        st.markdown(quick_result)
-                    else:
-                        error_msg = getattr(ai_analyzer, 'last_error', None) or "未知错误"
-                        st.warning(f"分析失败: {error_msg}")
-
+        with col4:
+            if st.button("查看", key=f"view_{report.id}", use_container_width=True):
+                # 这里可以设置 selected_code 来查看报告
+                st.session_state.selected_report_code = report.code
+                st.rerun()
 else:
-    st.info("股票池为空，请先添加股票")
+    st.info("暂无历史分析报告，请先选择股票进行分析")
 
 # Footer
 st.markdown(render_footer(), unsafe_allow_html=True)

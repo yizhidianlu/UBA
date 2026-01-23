@@ -217,3 +217,27 @@ class ScanProgress(Base):
     pb_threshold_pct = Column(Float, default=20.0)  # PB距离阈值百分比
     started_at = Column(DateTime)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class AIAnalysisReport(Base):
+    """AI分析报告存储"""
+    __tablename__ = "ai_analysis_reports"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), nullable=False, index=True)  # 股票代码
+    name = Column(String(100), nullable=False)             # 股票名称
+    summary = Column(Text)                                  # 一句话总结
+    valuation_analysis = Column(Text)                       # 估值分析
+    fundamental_analysis = Column(Text)                     # 基本面分析
+    risk_analysis = Column(Text)                            # 风险分析
+    investment_suggestion = Column(Text)                    # 投资建议
+    pb_recommendation = Column(Text)                        # PB阈值建议
+    full_report = Column(Text)                              # 完整报告
+    ai_score = Column(Integer)                              # AI评分 1-5
+    # 生成时的基本面数据快照
+    price_at_report = Column(Float)                         # 报告时价格
+    pb_at_report = Column(Float)                            # 报告时PB
+    pe_at_report = Column(Float)                            # 报告时PE
+    market_cap_at_report = Column(Float)                    # 报告时市值
+    created_at = Column(DateTime, default=datetime.now)     # 报告生成时间
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
