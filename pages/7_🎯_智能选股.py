@@ -125,18 +125,25 @@ with col2:
     else:
         st.info("尚未开始扫描")
 
+if not progress_info:
+    if scanner.start_scan(pb_threshold_pct=float(bg_max_distance), scan_interval=bg_interval):
+        st.info("✅ 后台扫描已自动启动，可离开此页面。")
+        st.rerun()
+
 # Control buttons
 st.divider()
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("▶️ 开始扫描", type="primary", use_container_width=True):
-        if scanner.start_scan(pb_threshold_pct=float(bg_max_distance), scan_interval=bg_interval):
-            st.success("✅ 后台扫描已启动！")
-            st.info("扫描将在后台持续进行，可以离开此页面。")
-            st.rerun()
-        else:
-            st.warning("扫描已在运行中")
+    is_running = scanner.is_running()
+    scan_completed = bool(progress_info) and not is_running and progress_info.get('total_stocks') and progress_info.get('current_index') == 0
+    if scan_completed:
+        if st.button("🔁 重新扫描", type="primary", use_container_width=True):
+            if scanner.start_scan(pb_threshold_pct=float(bg_max_distance), scan_interval=bg_interval):
+                st.success("✅ 已开始重新扫描！")
+                st.rerun()
+    else:
+        st.info("自动扫描已启用")
 
 with col2:
     if st.button("⏹️ 停止扫描", use_container_width=True):
