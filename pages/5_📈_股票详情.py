@@ -78,6 +78,20 @@ if selected_code:
                 start_date = None
 
             valuations = valuation_service.get_pb_history(asset.id, start_date=start_date)
+            auto_fetch_key = f"pb_autofetch_{asset.code}_{time_range}"
+
+            if not valuations and not st.session_state.get(auto_fetch_key):
+                st.session_state[auto_fetch_key] = True
+                with st.spinner("正在获取PB历史数据..."):
+                    try:
+                        data_list = valuation_service.fetch_pb_data(asset.code)
+                        if data_list:
+                            valuation_service.batch_save_valuations(asset.id, data_list)
+                            valuations = valuation_service.get_pb_history(asset.id, start_date=start_date)
+                        else:
+                            st.warning("未能获取PB历史数据，请稍后重试")
+                    except Exception as e:
+                        st.error(f"获取PB历史数据失败: {e}")
 
             if valuations:
                 # Create chart
