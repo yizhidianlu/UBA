@@ -74,10 +74,17 @@ class AIAnalyzer:
         self.api_key = api_key or get_qwen_api_key()
         self.last_error = None
         self.client = None
-        if self.api_key:
-            self.client = OpenAI(api_key=self.api_key, base_url=QWEN_BASE_URL)
+
+        if not OPENAI_AVAILABLE:
+            self.last_error = "OpenAI 库未安装或版本过低，请运行: pip install openai>=1.0.0"
+        elif self.api_key:
+            try:
+                self.client = OpenAI(api_key=self.api_key, base_url=QWEN_BASE_URL)
+            except Exception as e:
+                self.last_error = f"OpenAI 客户端初始化失败: {e}"
         else:
             self.last_error = "未配置 Qwen API Key，请在 Streamlit Secrets 中设置 QWEN_API_KEY"
+
         self.session = requests.Session()
         self.session.headers.update({
             'Content-Type': 'application/json'
