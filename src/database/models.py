@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import Enum
 from sqlalchemy import (
     Column, Integer, String, Float, DateTime, Date, Text,
-    ForeignKey, Boolean, Enum as SQLEnum
+    ForeignKey, Boolean, Enum as SQLEnum, UniqueConstraint, Index
 )
 from sqlalchemy.orm import DeclarativeBase, relationship
 
@@ -80,20 +80,23 @@ class Threshold(Base):
 class Valuation(Base):
     """历史PB数据"""
     __tablename__ = "valuations"
+    __table_args__ = (
+        UniqueConstraint("asset_id", "date", name="uq_valuation_asset_date"),
+        Index("ix_valuation_asset_date", "asset_id", "date"),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     asset_id = Column(Integer, ForeignKey("assets.id"), nullable=False)
     date = Column(Date, nullable=False)
     pb = Column(Float, nullable=False)
-    price = Column(Float)
-    book_value_per_share = Column(Float)
-    data_source = Column(String(50), default="akshare")
+    price = Column(Float)  # 收盘价
+    book_value_per_share = Column(Float)  # 每股净资产
+    data_source = Column(String(50), default="akshare")  # 数据源: tushare, akshare, eastmoney
+    pb_method = Column(String(50))  # PB计算方法: direct(直接获取), calculated(price/bvps计算)
+    report_period = Column(String(20))  # 财报期: 如 2024Q3
     fetched_at = Column(DateTime, default=datetime.now)
 
     asset = relationship("Asset", back_populates="valuations")
-
-    class Meta:
-        unique_together = ('asset_id', 'date')
 
 
 class PortfolioPosition(Base):

@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 from typing import Optional, List, Callable
 import requests
+from .http_utils import HTTPClient
 
 try:
     import tushare as ts
@@ -27,12 +28,13 @@ class BackgroundScanner:
     """后台股票扫描器 - 自动扫描A股寻找低估股票"""
 
     def __init__(self, user_id: int, enable_ai_scoring: bool = True):
-        self.session = requests.Session()
-        self.user_id = user_id
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        # 使用统一的HTTP客户端
+        self.http_client = HTTPClient(timeout=30, max_retries=3)
+        self.http_client.session.headers.update({
             'Referer': 'https://quote.eastmoney.com/'
         })
+        self.session = self.http_client.session  # 保留兼容性
+        self.user_id = user_id
         self._stop_event = threading.Event()
         self._scan_thread: Optional[threading.Thread] = None
         self._progress_callback: Optional[Callable] = None
@@ -114,17 +116,7 @@ class BackgroundScanner:
 
     def _request_with_retry(self, url: str, params: dict, max_retries: int = 3) -> Optional[dict]:
         """带重试的HTTP请求"""
-        for attempt in range(max_retries):
-            try:
-                resp = self.session.get(url, params=params, timeout=30)
-                return resp.json()
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    print(f"请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                    time.sleep(2 ** attempt)  # 指数退避
-                else:
-                    print(f"请求失败，已重试 {max_retries} 次: {e}")
-        return None
+        return self.http_client.get(url, params=params, timeout=30)
 
     def get_all_a_shares(self) -> List[dict]:
         """获取所有A股股票列表"""
@@ -335,9 +327,23 @@ class BackgroundScanner:
     def start_scan(self, pb_threshold_pct: float = 20.0, scan_interval: int = 120,
                    progress_callback: Callable = None):
         """启动后台扫描"""
+        # 检查是否已有线程在运行
         if self._scan_thread and self._scan_thread.is_alive():
             print("扫描已在运行中")
             return False
+
+        # 检查数据库中的运行状态（防止多实例启动）
+        init_db()
+        db_session = get_session()
+        try:
+            progress = db_session.query(ScanProgress).filter(
+                ScanProgress.user_id == self.user_id
+            ).first()
+            if progress and progress.is_running:
+                print("数据库显示扫描正在运行中，请先停止旧的扫描任务")
+                return False
+        finally:
+            db_session.close()
 
         self._stop_event.clear()
         self._progress_callback = progress_callback
@@ -347,6 +353,7 @@ class BackgroundScanner:
             daemon=True
         )
         self._scan_thread.start()
+        print(f"后台扫描已启动 (用户ID: {self.user_id})")
         return True
 
     def stop_scan(self):
@@ -355,9 +362,45 @@ class BackgroundScanner:
         if self._scan_thread:
             self._scan_thread.join(timeout=5)
 
+        # 清理数据库状态
+        init_db()
+        db_session = get_session()
+        try:
+            progress = db_session.query(ScanProgress).filter(
+                ScanProgress.user_id == self.user_id
+            ).first()
+            if progress:
+                progress.is_running = False
+                progress.updated_at = datetime.now()
+                db_session.commit()
+        finally:
+            db_session.close()
+
+        print(f"后台扫描已停止 (用户ID: {self.user_id})")
+
     def is_running(self) -> bool:
         """检查扫描是否在运行"""
         return self._scan_thread is not None and self._scan_thread.is_alive()
+
+    def reset_scan_status(self):
+        """重置扫描状态（用于清理异常状态）"""
+        init_db()
+        db_session = get_session()
+        try:
+            progress = db_session.query(ScanProgress).filter(
+                ScanProgress.user_id == self.user_id
+            ).first()
+            if progress:
+                progress.is_running = False
+                progress.updated_at = datetime.now()
+                db_session.commit()
+                print(f"扫描状态已重置 (用户ID: {self.user_id})")
+                return True
+        except Exception as e:
+            print(f"重置扫描状态失败: {e}")
+        finally:
+            db_session.close()
+        return False
 
     def _scan_loop(self, pb_threshold_pct: float, scan_interval: int):
         """扫描主循环"""

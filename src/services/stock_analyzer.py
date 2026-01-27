@@ -3,6 +3,8 @@ from typing import Optional, Tuple, List
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 import requests
+import os
+from .http_utils import HTTPClient
 
 # Try to import tushare
 try:
@@ -11,8 +13,27 @@ try:
 except ImportError:
     TUSHARE_AVAILABLE = False
 
-# Tushare Token
-TUSHARE_TOKEN = "b49f13cb0fda07acdb4766d9bb8d8e63bc887607428fbe6acac2dcc9"
+
+def get_tushare_token() -> Optional[str]:
+    """
+    从环境变量或Streamlit secrets获取Tushare token
+    优先级: Streamlit secrets > 环境变量
+    """
+    # 1. 尝试从 Streamlit secrets 获取
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and "TUSHARE_TOKEN" in st.secrets:
+            return st.secrets["TUSHARE_TOKEN"]
+    except Exception:
+        pass
+
+    # 2. 从环境变量获取
+    token = os.getenv("TUSHARE_TOKEN")
+    if token:
+        return token
+
+    # 3. 无token时返回None，调用方需处理降级
+    return None
 
 
 @dataclass
@@ -45,20 +66,28 @@ class PBAnalysis:
 class StockAnalyzer:
     """股票分析器：混合使用东方财富和Tushare"""
 
-    def __init__(self, token: str = TUSHARE_TOKEN):
-        # HTTP session for EastMoney
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    def __init__(self, token: Optional[str] = None):
+        # HTTP client with retry and timeout
+        self.http_client = HTTPClient(timeout=30, max_retries=3)
+        self.http_client.session.headers.update({
             'Referer': 'https://quote.eastmoney.com/'
         })
+        # 保留兼容性
+        self.session = self.http_client.session
 
         # Tushare API
         self.pro = None
         if TUSHARE_AVAILABLE:
             try:
-                ts.set_token(token)
-                self.pro = ts.pro_api()
+                # 优先使用传入的token，否则从环境变量/secrets获取
+                if token is None:
+                    token = get_tushare_token()
+
+                if token:
+                    ts.set_token(token)
+                    self.pro = ts.pro_api()
+                else:
+                    print("未配置 Tushare Token，历史 PB 数据将使用备用方案（东方财富）")
             except Exception as e:
                 print(f"Tushare初始化失败: {e}")
 
@@ -186,7 +215,9 @@ class StockAnalyzer:
                             pb_data.append({
                                 'date': trade_date,
                                 'pb': round(float(pb_val), 2),
-                                'price': float(row['close']) if row.get('close') else None
+                                'price': float(row['close']) if row.get('close') else None,
+                                'data_source': 'tushare',
+                                'pb_method': 'direct'
                             })
                     except Exception:
                         continue
@@ -252,7 +283,10 @@ class StockAnalyzer:
                             pb_data.append({
                                 'date': date.fromisoformat(date_str),
                                 'pb': pb,
-                                'price': close
+                                'price': close,
+                                'book_value_per_share': bvps,
+                                'data_source': 'eastmoney',
+                                'pb_method': 'calculated'  # 通过价格/每股净资产计算
                             })
                     except Exception:
                         continue

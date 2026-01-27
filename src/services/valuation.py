@@ -56,10 +56,17 @@ class ValuationService:
                     if df is not None and not df.empty:
                         df = df[df['trade_date'] >= start_date.strftime('%Y-%m-%d')]
                         for _, row in df.iterrows():
+                            # 从 close 字段获取收盘价，如果没有则尝试从 pb 和 bvps 计算
+                            price = None
+                            if pd.notna(row.get('close')):
+                                price = float(row['close'])
+
                             data_list.append({
                                 'date': pd.to_datetime(row['trade_date']).date(),
                                 'pb': float(row['pb']) if pd.notna(row.get('pb')) else None,
-                                'price': float(row['total_mv']) / 10000 if pd.notna(row.get('total_mv')) else None,
+                                'price': price,
+                                'data_source': 'akshare',
+                                'pb_method': 'direct'
                             })
                 except Exception as e:
                     print(f"获取A股数据失败 {code}: {e}")
@@ -106,7 +113,9 @@ class ValuationService:
         pb: float,
         price: Optional[float] = None,
         book_value_per_share: Optional[float] = None,
-        data_source: str = "akshare"
+        data_source: str = "akshare",
+        pb_method: Optional[str] = None,
+        report_period: Optional[str] = None
     ) -> Valuation:
         """保存单条估值数据"""
         # Check if exists
@@ -120,6 +129,8 @@ class ValuationService:
             existing.price = price
             existing.book_value_per_share = book_value_per_share
             existing.data_source = data_source
+            existing.pb_method = pb_method or "direct"
+            existing.report_period = report_period
             existing.fetched_at = datetime.now()
             self.session.commit()
             return existing
@@ -130,7 +141,9 @@ class ValuationService:
             pb=pb,
             price=price,
             book_value_per_share=book_value_per_share,
-            data_source=data_source
+            data_source=data_source,
+            pb_method=pb_method or "direct",
+            report_period=report_period
         )
         self.session.add(valuation)
         self.session.commit()
@@ -146,7 +159,10 @@ class ValuationService:
                     val_date=data['date'],
                     pb=data['pb'],
                     price=data.get('price'),
-                    book_value_per_share=data.get('book_value_per_share')
+                    book_value_per_share=data.get('book_value_per_share'),
+                    data_source=data.get('data_source', 'akshare'),
+                    pb_method=data.get('pb_method', 'direct'),
+                    report_period=data.get('report_period')
                 )
                 count += 1
         return count
