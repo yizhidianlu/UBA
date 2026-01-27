@@ -1,6 +1,6 @@
 """Signal engine for PB trigger detection."""
-from typing import List, Optional
-from datetime import date, datetime
+from typing import List, Optional, Dict
+from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from ..database.models import Asset, Signal, SignalType, SignalStatus, Valuation
@@ -10,10 +10,28 @@ from .valuation import ValuationService
 class SignalEngine:
     """信号引擎：检测PB触发并生成信号"""
 
-    def __init__(self, session: Session, user_id: int):
+    # 默认配置
+    DEFAULT_MIN_ROE = 5.0  # 最低ROE要求（%）
+    DEFAULT_SIGNAL_COOLDOWN_DAYS = 7  # 信号冷却期（天）
+    DEFAULT_ENABLE_ROE_FILTER = True  # 是否启用ROE过滤
+    DEFAULT_ENABLE_COOLDOWN = True  # 是否启用冷却期
+
+    def __init__(
+        self,
+        session: Session,
+        user_id: int,
+        min_roe: float = DEFAULT_MIN_ROE,
+        signal_cooldown_days: int = DEFAULT_SIGNAL_COOLDOWN_DAYS,
+        enable_roe_filter: bool = DEFAULT_ENABLE_ROE_FILTER,
+        enable_cooldown: bool = DEFAULT_ENABLE_COOLDOWN
+    ):
         self.session = session
         self.user_id = user_id
         self.valuation_service = ValuationService(session)
+        self.min_roe = min_roe
+        self.signal_cooldown_days = signal_cooldown_days
+        self.enable_roe_filter = enable_roe_filter
+        self.enable_cooldown = enable_cooldown
 
     def check_triggers(self, asset: Asset) -> Optional[Signal]:
         """
@@ -75,6 +93,13 @@ class SignalEngine:
             )
 
         if signal_type:
+            # 应用过滤条件
+            filter_ok, filter_msg = self.check_filters(asset, signal_type)
+            if not filter_ok:
+                # 信号被过滤，记录原因但不生成信号
+                # 可以考虑记录到日志表，便于分析
+                return None
+
             signal = Signal(
                 user_id=self.user_id,
                 asset_id=asset.id,
@@ -196,3 +221,83 @@ class SignalEngine:
             query = query.filter(Signal.asset_id == asset_id)
 
         return query.order_by(Signal.date.desc()).all()
+
+    def check_roe_quality(self, asset: Asset) -> tuple[bool, Optional[str]]:
+        """
+        检查ROE质量
+
+        Args:
+            asset: 股票资产
+
+        Returns:
+            (是否通过, 不通过原因)
+        """
+        if not self.enable_roe_filter:
+            return True, None
+
+        # 这里需要从外部数据源获取ROE数据
+        # 目前暂时跳过ROE检查，返回True
+        # TODO: 集成 ROE 数据获取
+        # 可以从 Tushare/AkShare 获取财务数据
+        return True, None
+
+    def check_signal_cooldown(
+        self,
+        asset_id: int,
+        signal_type: SignalType
+    ) -> tuple[bool, Optional[str]]:
+        """
+        检查信号冷却期
+
+        Args:
+            asset_id: 股票ID
+            signal_type: 信号类型
+
+        Returns:
+            (是否可以触发, 冷却原因)
+        """
+        if not self.enable_cooldown:
+            return True, None
+
+        # 检查最近N天是否有相同类型的信号
+        cooldown_date = date.today() - timedelta(days=self.signal_cooldown_days)
+
+        recent_signal = self.session.query(Signal).filter(
+            Signal.asset_id == asset_id,
+            Signal.user_id == self.user_id,
+            Signal.signal_type == signal_type,
+            Signal.date >= cooldown_date
+        ).order_by(Signal.date.desc()).first()
+
+        if recent_signal:
+            days_ago = (date.today() - recent_signal.date).days
+            return False, f"冷却期内：{days_ago}天前已触发过 {signal_type.value} 信号"
+
+        return True, None
+
+    def check_filters(
+        self,
+        asset: Asset,
+        signal_type: SignalType
+    ) -> tuple[bool, Optional[str]]:
+        """
+        综合检查所有过滤条件
+
+        Args:
+            asset: 股票资产
+            signal_type: 信号类型
+
+        Returns:
+            (是否通过, 不通过原因)
+        """
+        # 1. ROE质量过滤
+        roe_ok, roe_msg = self.check_roe_quality(asset)
+        if not roe_ok:
+            return False, f"ROE过滤: {roe_msg}"
+
+        # 2. 信号冷却期
+        cooldown_ok, cooldown_msg = self.check_signal_cooldown(asset.id, signal_type)
+        if not cooldown_ok:
+            return False, f"信号冷却: {cooldown_msg}"
+
+        return True, None

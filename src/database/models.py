@@ -99,6 +99,24 @@ class Valuation(Base):
     asset = relationship("Asset", back_populates="valuations")
 
 
+class Portfolio(Base):
+    """资金账户"""
+    __tablename__ = "portfolios"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False, index=True)
+    name = Column(String(100), default="默认账户")
+    total_asset = Column(Float, default=0)  # 总资产（NAV）
+    cash = Column(Float, default=0)  # 现金余额
+    market_value = Column(Float, default=0)  # 持仓市值
+    frozen_cash = Column(Float, default=0)  # 冻结资金
+    available_cash = Column(Float, default=0)  # 可用资金
+    total_profit = Column(Float, default=0)  # 累计收益
+    total_profit_rate = Column(Float, default=0)  # 累计收益率
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
 class PortfolioPosition(Base):
     """持仓信息"""
     __tablename__ = "portfolio_positions"
@@ -109,6 +127,9 @@ class PortfolioPosition(Base):
     position_pct = Column(Float, default=0)  # 仓位百分比
     shares = Column(Integer, default=0)  # 持股数量
     avg_cost = Column(Float)  # 平均成本
+    market_value = Column(Float)  # 持仓市值
+    profit = Column(Float)  # 持仓盈亏
+    profit_rate = Column(Float)  # 持仓盈亏率
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     asset = relationship("Asset", back_populates="position")
@@ -142,14 +163,33 @@ class Action(Base):
     signal_id = Column(Integer, ForeignKey("signals.id"))
     action_date = Column(Date, nullable=False)
     action_type = Column(SQLEnum(ActionType), nullable=False)
-    planned_position_pct = Column(Float)  # 计划仓位
-    executed_position_pct = Column(Float)  # 实际仓位
+
+    # 仓位信息
+    planned_position_pct = Column(Float)  # 计划仓位百分比
+    executed_position_pct = Column(Float)  # 实际仓位百分比
+
+    # 交易信息
     shares = Column(Integer)  # 交易股数
     price = Column(Float)  # 成交价
+    planned_amount = Column(Float)  # 计划交易金额
+    executed_amount = Column(Float)  # 实际交易金额
+
+    # 成本信息
+    commission = Column(Float, default=0)  # 佣金
+    stamp_duty = Column(Float, default=0)  # 印花税
+    transfer_fee = Column(Float, default=0)  # 过户费
+    total_cost = Column(Float, default=0)  # 总成本（含所有费用）
+
+    # 决策信息
     reason = Column(Text, nullable=False)  # 必填：为什么符合规则
     emotion = Column(String(50))  # 可选：恐惧/贪婪/冲动等
     rule_compliance = Column(Boolean, default=True)  # 是否合规
     compliance_note = Column(Text)  # 合规说明
+
+    # 订单信息（可选，对接实盘时使用）
+    order_id = Column(String(100))  # 订单号
+    order_status = Column(String(50))  # 订单状态
+
     created_at = Column(DateTime, default=datetime.now)
 
     asset = relationship("Asset", back_populates="actions")
@@ -245,12 +285,55 @@ class AIAnalysisReport(Base):
     pb_recommendation = Column(Text)                        # PB阈值建议
     full_report = Column(Text)                              # 完整报告
     ai_score = Column(Integer)                              # AI评分 0-100
+
     # 生成时的基本面数据快照
     price_at_report = Column(Float)                         # 报告时价格
     pb_at_report = Column(Float)                            # 报告时PB
     pe_at_report = Column(Float)                            # 报告时PE
     market_cap_at_report = Column(Float)                    # 报告时市值
+
+    # 可审计字段（新增）
+    input_data_json = Column(Text)                          # 输入数据快照（JSON格式）
+    data_sources_json = Column(Text)                        # 数据来源映射（JSON格式）
+    model_name = Column(String(100))                        # 使用的模型名称
+    model_version = Column(String(50))                      # 模型版本
+    prompt_tokens = Column(Integer)                         # prompt token数
+    completion_tokens = Column(Integer)                     # completion token数
+    total_tokens = Column(Integer)                          # 总token数
+    estimated_cost = Column(Float)                          # 估算成本（美元）
+    generation_time_ms = Column(Integer)                    # 生成耗时（毫秒）
+    data_completeness_score = Column(Float)                 # 数据完整性评分 0-1
+    missing_fields = Column(Text)                           # 缺失字段列表（逗号分隔）
+
     created_at = Column(DateTime, default=datetime.now)     # 报告生成时间
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+
+class IndustryConfig(Base):
+    """行业配置和默认阈值模板"""
+    __tablename__ = "industry_configs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    industry_name = Column(String(100), unique=True, nullable=False)  # 行业名称
+    display_name = Column(String(100))  # 显示名称
+    description = Column(Text)  # 行业描述
+
+    # 默认PB阈值
+    default_buy_pb = Column(Float)  # 默认请客价
+    default_add_pb = Column(Float)  # 默认加仓价
+    default_sell_pb = Column(Float)  # 默认退出价
+
+    # 行业特征
+    typical_pb_range_min = Column(Float)  # 典型PB范围-最小
+    typical_pb_range_max = Column(Float)  # 典型PB范围-最大
+    typical_roe = Column(Float)  # 典型ROE
+    cyclical = Column(Boolean, default=False)  # 是否周期性行业
+
+    # 风控参数
+    recommended_max_position = Column(Float)  # 建议最大仓位
+    risk_level = Column(String(20))  # 风险等级：low/medium/high
+
+    created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 

@@ -2,6 +2,7 @@
 import os
 import sys
 import sqlite3
+from contextlib import contextmanager
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, Session
 from .models import Base
@@ -48,6 +49,32 @@ def get_session() -> Session:
     if _SessionLocal is None:
         _SessionLocal = sessionmaker(bind=get_engine())
     return _SessionLocal()
+
+
+@contextmanager
+def session_scope():
+    """
+    提供一个事务作用域的上下文管理器。
+
+    使用方法:
+        with session_scope() as session:
+            session.add(obj)
+            # 自动 commit，异常时自动 rollback
+
+    优势:
+    - 自动管理事务提交和回滚
+    - 确保连接正确关闭
+    - 简化错误处理
+    """
+    session = get_session()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def run_migrations(db_path: str):
