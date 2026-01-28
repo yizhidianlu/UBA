@@ -1,9 +1,15 @@
-"""Stock screening service to find undervalued stocks based on PB."""
+"""Stock screening service to find undervalued stocks based on PB - Tushare version."""
 from typing import Optional, List, Dict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-import requests
 import time
+
+try:
+    import tushare as ts
+    TUSHARE_AVAILABLE = True
+except ImportError:
+    ts = None
+    TUSHARE_AVAILABLE = False
 
 
 @dataclass
@@ -25,7 +31,7 @@ class StockRecommendation:
 
 
 class StockScreener:
-    """股票筛选器：寻找PB接近请客价的股票"""
+    """股票筛选器：寻找PB接近请客价的股票 - 使用 Tushare"""
 
     # 热门行业股票池 - 各行业代表性股票
     STOCK_UNIVERSE = [
@@ -60,22 +66,26 @@ class StockScreener:
     ]
 
     def __init__(self):
-        self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Referer': 'https://quote.eastmoney.com/'
-        })
+        self._pro = None
+        self._init_tushare()
 
-    def _get_secid(self, code: str) -> str:
-        """转换股票代码为东财secid"""
-        code = code.upper().replace('.SH', '').replace('.SZ', '')
-        if code.startswith('6'):
-            return f"1.{code}"
-        else:
-            return f"0.{code}"
+    def _init_tushare(self):
+        """初始化 Tushare API"""
+        if not TUSHARE_AVAILABLE:
+            print("Tushare 未安装")
+            return
 
-    def _get_full_code(self, code: str) -> str:
-        """获取完整股票代码"""
+        try:
+            from src.services.stock_analyzer import get_tushare_token
+            token = get_tushare_token()
+            if token:
+                ts.set_token(token)
+                self._pro = ts.pro_api()
+        except Exception as e:
+            print(f"Tushare 初始化失败: {e}")
+
+    def _get_ts_code(self, code: str) -> str:
+        """转换股票代码为 Tushare 格式"""
         code = code.upper().replace('.SH', '').replace('.SZ', '')
         if code.startswith('6'):
             return f"{code}.SH"
@@ -83,83 +93,106 @@ class StockScreener:
             return f"{code}.SZ"
 
     def _fetch_stock_data(self, code: str) -> Optional[Dict]:
-        """获取单只股票的详细数据"""
-        secid = self._get_secid(code)
-
-        try:
-            # 获取实时行情和基本指标
-            url = 'https://push2.eastmoney.com/api/qt/stock/get'
-            params = {
-                'secid': secid,
-                'fields': 'f43,f44,f45,f46,f57,f58,f92,f116,f127,f162,f167',
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-            }
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
-
-            if not data.get('data'):
-                return None
-
-            d = data['data']
-            price = d.get('f43', 0) / 100 if d.get('f43') else None
-            bvps = d.get('f92')
-
-            if not price or not bvps or bvps <= 0:
-                return None
-
-            current_pb = round(price / bvps, 2)
-
-            return {
-                'code': self._get_full_code(code),
-                'name': d.get('f58', ''),
-                'industry': d.get('f127', ''),
-                'price': price,
-                'current_pb': current_pb,
-                'bvps': bvps,
-                'market_cap': d.get('f116') / 100000000 if d.get('f116') else None,
-                'pe_ttm': d.get('f162') / 100 if d.get('f162') else None,
-            }
-
-        except Exception as e:
-            print(f"获取股票数据失败 {code}: {e}")
+        """获取单只股票的详细数据 - 使用 Tushare"""
+        if not self._pro:
             return None
 
-    def _fetch_pb_history(self, code: str, secid: str, bvps: float, years: int = 3) -> List[float]:
-        """获取历史PB数据"""
-        pb_values = []
+        ts_code = self._get_ts_code(code)
 
         try:
-            days = years * 365
-            kline_url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
-            kline_params = {
-                'secid': secid,
-                'fields1': 'f1,f2,f3,f4,f5',
-                'fields2': 'f51,f52,f53,f54,f55,f56,f57',
-                'klt': '101',  # 日线
-                'fqt': '0',    # 不复权
-                'end': '20500101',
-                'lmt': str(days),
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
+            # 从缓存获取股票基本信息
+            from src.services.stock_analyzer import _load_stock_basic_cache
+            cache = _load_stock_basic_cache()
+
+            name = ''
+            industry = ''
+            if ts_code in cache:
+                name = cache[ts_code].get('name', '')
+                industry = cache[ts_code].get('industry', '') or ''
+
+            # 获取最新日行情
+            time.sleep(0.5)
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
+
+            df_daily = self._pro.daily(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date
+            )
+
+            if df_daily is None or df_daily.empty:
+                return None
+
+            price = df_daily.iloc[0]['close']
+
+            # 获取 PB、PE、市值
+            time.sleep(0.5)
+            df_basic = self._pro.daily_basic(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields='ts_code,trade_date,pb,pe_ttm,total_mv'
+            )
+
+            if df_basic is None or df_basic.empty:
+                return None
+
+            latest = df_basic.iloc[0]
+            current_pb = latest['pb'] if 'pb' in latest and latest['pb'] else None
+            pe_ttm = latest['pe_ttm'] if 'pe_ttm' in latest else None
+            market_cap = latest['total_mv'] / 10000 if 'total_mv' in latest and latest['total_mv'] else None
+
+            if not current_pb or current_pb <= 0:
+                return None
+
+            return {
+                'code': ts_code,
+                'name': name,
+                'industry': industry,
+                'price': price,
+                'current_pb': round(current_pb, 2),
+                'market_cap': market_cap,
+                'pe_ttm': pe_ttm,
             }
 
-            resp = self.session.get(kline_url, params=kline_params, timeout=15)
-            kline_data = resp.json()
+        except Exception as e:
+            error_msg = str(e)
+            if '权限' in error_msg:
+                print(f"获取股票数据需要更高的 Tushare 权限: {ts_code}")
+            else:
+                print(f"获取股票数据失败 {code}: {e}")
+            return None
 
-            if kline_data.get('data', {}).get('klines'):
-                klines = kline_data['data']['klines']
+    def _fetch_pb_history(self, ts_code: str, years: int = 3) -> List[float]:
+        """获取历史PB数据 - 使用 Tushare"""
+        pb_values = []
 
-                for kline in klines:
-                    try:
-                        parts = kline.split(',')
-                        close = float(parts[2])
-                        pb = round(close / bvps, 2)
-                        if pb > 0:
-                            pb_values.append(pb)
-                    except Exception:
-                        continue
+        if not self._pro:
+            return pb_values
+
+        try:
+            time.sleep(0.5)
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=365 * years)).strftime('%Y%m%d')
+
+            df = self._pro.daily_basic(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields='trade_date,pb'
+            )
+
+            if df is not None and not df.empty:
+                for _, row in df.iterrows():
+                    pb = row.get('pb')
+                    if pb and pb > 0:
+                        pb_values.append(round(pb, 2))
 
         except Exception as e:
-            print(f"获取历史PB失败 {code}: {e}")
+            error_msg = str(e)
+            if '权限' not in error_msg:
+                print(f"获取历史PB失败 {ts_code}: {e}")
 
         return pb_values
 
@@ -211,7 +244,13 @@ class StockScreener:
 
         Returns:
             股票推荐列表，按距离请客价百分比排序
+
+        注意：此功能需要 Tushare 120+ 积分权限访问 daily_basic 接口
         """
+        if not self._pro:
+            print("Tushare API 未初始化，无法扫描股票")
+            return []
+
         recommendations = []
         total = len(self.STOCK_UNIVERSE)
 
@@ -225,8 +264,8 @@ class StockScreener:
                 continue
 
             # 获取历史PB
-            secid = self._get_secid(code)
-            pb_values = self._fetch_pb_history(code, secid, stock_data['bvps'])
+            ts_code = self._get_ts_code(code)
+            pb_values = self._fetch_pb_history(ts_code)
 
             # 分析PB
             pb_analysis = self._analyze_pb(pb_values)
@@ -259,9 +298,6 @@ class StockScreener:
                     pe_ttm=stock_data['pe_ttm'],
                     roe=None  # 暂不获取ROE
                 ))
-
-            # 避免请求过于频繁
-            time.sleep(0.1)
 
         # 按距离请客价百分比排序（越低越好）
         recommendations.sort(key=lambda x: x.pb_distance_pct)

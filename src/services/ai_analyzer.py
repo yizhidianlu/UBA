@@ -1,9 +1,9 @@
 """AI-powered stock analysis using Qwen API (Alibaba Cloud)."""
 from typing import Optional, Dict, List
 from dataclasses import dataclass
-from datetime import datetime, date
-import requests
+from datetime import datetime, date, timedelta
 import os
+import time
 
 try:
     from openai import OpenAI
@@ -11,6 +11,13 @@ try:
 except ImportError:
     OpenAI = None
     OPENAI_AVAILABLE = False
+
+try:
+    import tushare as ts
+    TUSHARE_AVAILABLE = True
+except ImportError:
+    ts = None
+    TUSHARE_AVAILABLE = False
 
 # Qwen API Configuration (DashScope)
 QWEN_MODEL = "qwen3-max"
@@ -68,12 +75,13 @@ class AnalysisReport:
 
 
 class AIAnalyzer:
-    """AI 股票分析器"""
+    """AI 股票分析器 - 使用 Tushare 获取数据"""
 
     def __init__(self, api_key: str = None):
         self.api_key = api_key or get_qwen_api_key()
         self.last_error = None
         self.client = None
+        self._pro = None
 
         if not OPENAI_AVAILABLE:
             self.last_error = "OpenAI 库未安装或版本过低，请运行: pip install openai>=1.0.0"
@@ -85,10 +93,22 @@ class AIAnalyzer:
         else:
             self.last_error = "未配置 Qwen API Key，请在 Streamlit Secrets 中设置 QWEN_API_KEY"
 
-        self.session = requests.Session()
-        self.session.headers.update({
-            'Content-Type': 'application/json'
-        })
+        # 初始化 Tushare
+        self._init_tushare()
+
+    def _init_tushare(self):
+        """初始化 Tushare API"""
+        if not TUSHARE_AVAILABLE:
+            return
+
+        try:
+            from src.services.stock_analyzer import get_tushare_token
+            token = get_tushare_token()
+            if token:
+                ts.set_token(token)
+                self._pro = ts.pro_api()
+        except Exception as e:
+            print(f"Tushare 初始化失败: {e}")
 
     def _call_openai(self, prompt: str) -> Optional[str]:
         """调用 Qwen API (OpenAI 兼容模式，支持 Thinking 深度思考)"""
@@ -148,50 +168,92 @@ class AIAnalyzer:
         return None
 
     def fetch_fundamental_data(self, code: str) -> Optional[FundamentalData]:
-        """获取股票基本面数据"""
+        """获取股票基本面数据 - 使用 Tushare"""
+        if not self._pro:
+            print("Tushare API 未初始化，无法获取基本面数据")
+            return None
+
         # 解析代码
         code = code.upper()
-        if '.SH' in code:
-            pure_code = code.replace('.SH', '')
-            secid = f"1.{pure_code}"
-        elif '.SZ' in code:
-            pure_code = code.replace('.SZ', '')
-            secid = f"0.{pure_code}"
+        if '.SH' in code or '.SZ' in code:
+            ts_code = code
         else:
-            pure_code = code
             if code.startswith('6'):
-                secid = f"1.{code}"
+                ts_code = f"{code}.SH"
             else:
-                secid = f"0.{code}"
+                ts_code = f"{code}.SZ"
 
         try:
-            # 获取实时行情和基本指标
-            url = 'https://push2.eastmoney.com/api/qt/stock/get'
-            params = {
-                'secid': secid,
-                'fields': 'f43,f44,f45,f46,f47,f48,f50,f51,f52,f57,f58,f84,f85,f92,f116,f117,f127,f162,f167,f168,f169,f170',
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-            }
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
+            # 从缓存获取股票基本信息
+            from src.services.stock_analyzer import _load_stock_basic_cache
+            cache = _load_stock_basic_cache()
 
-            if not data.get('data'):
-                return None
+            name = ''
+            industry = ''
+            if ts_code in cache:
+                name = cache[ts_code].get('name', '')
+                industry = cache[ts_code].get('industry', '') or ''
+            else:
+                # 从 API 获取
+                time.sleep(0.5)
+                df_info = self._pro.stock_basic(ts_code=ts_code, fields='ts_code,name,industry')
+                if df_info is not None and not df_info.empty:
+                    name = df_info.iloc[0]['name']
+                    industry = df_info.iloc[0]['industry'] if 'industry' in df_info.columns else ''
 
-            d = data['data']
-            price = d.get('f43', 0) / 100 if d.get('f43') else None
-            bvps = d.get('f92')
-            pb = round(price / bvps, 2) if price and bvps and bvps > 0 else None
+            # 获取最新日行情数据
+            time.sleep(0.5)
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
 
-            # 获取更多财务数据
-            finance_data = self._fetch_finance_data(pure_code, secid)
+            df_daily = self._pro.daily(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date
+            )
+
+            price = None
+            week_52_high = None
+            week_52_low = None
+
+            if df_daily is not None and not df_daily.empty:
+                price = df_daily.iloc[0]['close']
+
+                # 获取52周高低
+                start_52w = (datetime.now() - timedelta(days=365)).strftime('%Y%m%d')
+                df_52w = self._pro.daily(ts_code=ts_code, start_date=start_52w, end_date=end_date)
+                if df_52w is not None and not df_52w.empty:
+                    week_52_high = df_52w['high'].max()
+                    week_52_low = df_52w['low'].min()
+
+            # 获取每日基本面数据（PB、PE、市值等）
+            pb = None
+            pe_ttm = None
+            market_cap = None
+
+            time.sleep(0.5)
+            df_basic = self._pro.daily_basic(
+                ts_code=ts_code,
+                start_date=start_date,
+                end_date=end_date,
+                fields='ts_code,trade_date,pb,pe_ttm,total_mv'
+            )
+
+            if df_basic is not None and not df_basic.empty:
+                latest = df_basic.iloc[0]
+                pb = latest['pb'] if 'pb' in latest else None
+                pe_ttm = latest['pe_ttm'] if 'pe_ttm' in latest else None
+                market_cap = latest['total_mv'] / 10000 if 'total_mv' in latest and latest['total_mv'] else None  # 转为亿
+
+            # 获取财务数据
+            finance_data = self._fetch_finance_data(ts_code)
 
             return FundamentalData(
-                code=code if '.' in code else (f"{code}.SH" if code.startswith('6') else f"{code}.SZ"),
-                name=d.get('f58', ''),
-                industry=d.get('f127', ''),
-                market_cap=d.get('f116') / 100000000 if d.get('f116') else None,  # 转为亿
-                pe_ttm=d.get('f162') / 100 if d.get('f162') else None,
+                code=ts_code,
+                name=name,
+                industry=industry,
+                market_cap=market_cap,
+                pe_ttm=pe_ttm,
                 pb=pb,
                 roe=finance_data.get('roe'),
                 revenue_yoy=finance_data.get('revenue_yoy'),
@@ -199,66 +261,47 @@ class AIAnalyzer:
                 gross_margin=finance_data.get('gross_margin'),
                 debt_ratio=finance_data.get('debt_ratio'),
                 current_price=price,
-                week_52_high=d.get('f44', 0) / 100 if d.get('f44') else None,
-                week_52_low=d.get('f45', 0) / 100 if d.get('f45') else None
+                week_52_high=week_52_high,
+                week_52_low=week_52_low
             )
 
         except Exception as e:
-            print(f"获取基本面数据失败: {e}")
+            error_msg = str(e)
+            if '权限' in error_msg:
+                print(f"获取基本面数据失败: 需要更高的 Tushare 权限")
+            else:
+                print(f"获取基本面数据失败: {e}")
             return None
 
-    def _fetch_finance_data(self, pure_code: str, secid: str) -> Dict:
-        """获取财务数据"""
+    def _fetch_finance_data(self, ts_code: str) -> Dict:
+        """获取财务数据 - 使用 Tushare"""
         finance = {}
 
+        if not self._pro:
+            return finance
+
         try:
-            # 尝试获取财务指标
-            url = "https://datacenter.eastmoney.com/securities/api/data/get"
-            params = {
-                'type': 'RPT_F10_FINANCE_MAINFINADATA',
-                'sty': 'ALL',
-                'filter': f'(SECUCODE="{pure_code}.SZ")' if pure_code.startswith(('0', '3')) else f'(SECUCODE="{pure_code}.SH")',
-                'p': '1',
-                'ps': '1',
-                'sr': '-1',
-                'st': 'REPORT_DATE',
-                'source': 'HSF10',
-                'client': 'PC'
-            }
+            # 获取财务指标
+            time.sleep(0.5)
+            df_indicator = self._pro.fina_indicator(
+                ts_code=ts_code,
+                fields='ts_code,ann_date,roe,grossprofit_margin,debt_to_assets,or_yoy,netprofit_yoy'
+            )
 
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
-
-            if (data.get('result') or {}).get('data'):
-                item = data['result']['data'][0]
-                finance['roe'] = item.get('ROEJQ')  # ROE
-                finance['gross_margin'] = item.get('XSMLL')  # 毛利率
-                finance['debt_ratio'] = item.get('ZCFZL')  # 资产负债率
-
-            # 获取增长数据
-            growth_url = "https://datacenter.eastmoney.com/securities/api/data/get"
-            growth_params = {
-                'type': 'RPT_F10_FINANCE_GINCREDATA',
-                'sty': 'ALL',
-                'filter': f'(SECUCODE="{pure_code}.SZ")' if pure_code.startswith(('0', '3')) else f'(SECUCODE="{pure_code}.SH")',
-                'p': '1',
-                'ps': '1',
-                'sr': '-1',
-                'st': 'REPORT_DATE',
-                'source': 'HSF10',
-                'client': 'PC'
-            }
-
-            resp = self.session.get(growth_url, params=growth_params, timeout=10)
-            growth_data = resp.json()
-
-            if (growth_data.get('result') or {}).get('data'):
-                item = growth_data['result']['data'][0]
-                finance['revenue_yoy'] = item.get('YYZSRTBZZ')  # 营收同比
-                finance['profit_yoy'] = item.get('GSJLRTBZZ')  # 净利润同比
+            if df_indicator is not None and not df_indicator.empty:
+                latest = df_indicator.iloc[0]
+                finance['roe'] = latest.get('roe')
+                finance['gross_margin'] = latest.get('grossprofit_margin')
+                finance['debt_ratio'] = latest.get('debt_to_assets')
+                finance['revenue_yoy'] = latest.get('or_yoy')
+                finance['profit_yoy'] = latest.get('netprofit_yoy')
 
         except Exception as e:
-            print(f"获取财务数据失败: {e}")
+            error_msg = str(e)
+            if '权限' in error_msg:
+                print(f"获取财务数据需要更高的 Tushare 权限")
+            else:
+                print(f"获取财务数据失败: {e}")
 
         return finance
 

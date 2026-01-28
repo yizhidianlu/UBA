@@ -3,10 +3,8 @@ import time
 import threading
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Callable
-import requests
-from .http_utils import HTTPClient
 
 try:
     import tushare as ts
@@ -18,6 +16,7 @@ except ImportError:
 from src.database import get_session, init_db
 from src.database.models import StockCandidate, ScanProgress, CandidateStatus, Asset
 from src.services.ai_analyzer import AIAnalyzer, get_qwen_api_key
+from src.services.stock_analyzer import _load_stock_basic_cache, _save_stock_basic_cache
 
 # 缓存文件路径
 CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
@@ -28,12 +27,6 @@ class BackgroundScanner:
     """后台股票扫描器 - 自动扫描A股寻找低估股票"""
 
     def __init__(self, user_id: int, enable_ai_scoring: bool = True):
-        # 使用统一的HTTP客户端
-        self.http_client = HTTPClient(timeout=30, max_retries=3)
-        self.http_client.session.headers.update({
-            'Referer': 'https://quote.eastmoney.com/'
-        })
-        self.session = self.http_client.session  # 保留兼容性
         self.user_id = user_id
         self._stop_event = threading.Event()
         self._scan_thread: Optional[threading.Thread] = None
@@ -114,10 +107,6 @@ class BackgroundScanner:
         except Exception as e:
             print(f"保存缓存失败: {e}")
 
-    def _request_with_retry(self, url: str, params: dict, max_retries: int = 3) -> Optional[dict]:
-        """带重试的HTTP请求"""
-        return self.http_client.get(url, params=params, timeout=30)
-
     def get_all_a_shares(self) -> List[dict]:
         """获取所有A股股票列表"""
         # 1. 先尝试从缓存加载
@@ -127,176 +116,154 @@ class BackgroundScanner:
 
         stocks = []
 
-        # 2. 尝试使用 Tushare
-        if TUSHARE_AVAILABLE:
-            try:
-                print("使用Tushare获取股票列表...")
-                df = ts.get_today_all()
-                if df is not None and len(df) > 0:
-                    for _, row in df.iterrows():
-                        code = str(row.get('code', ''))
-                        name = str(row.get('name', ''))
-                        # 过滤ST股票和退市股
-                        if code and name and 'ST' not in name and '退' not in name:
-                            stocks.append({
-                                'code': code,
-                                'name': name,
-                                'change_pct': row.get('changepercent'),
-                                'price': row.get('trade'),
-                                'pb': row.get('pb'),
-                                'pe': row.get('pe'),
-                                'market_cap': row.get('mktcap') / 10000 if row.get('mktcap') else None,  # 转换为亿
-                                'industry': ''
-                            })
-                    print(f"Tushare获取成功: {len(stocks)} 只股票")
-                    self._save_stock_cache(stocks)
-                    return stocks
-            except Exception as e:
-                print(f"Tushare获取失败: {e}")
+        # 只使用 Tushare
+        if not TUSHARE_AVAILABLE:
+            print("Tushare 未安装，无法获取股票列表")
+            return stocks
 
-        # 备用: 使用东方财富接口
-        print("使用东方财富接口获取股票列表...")
         try:
-            url = "https://push2.eastmoney.com/api/qt/clist/get"
-            page_size = 100
+            print("使用 Tushare 获取股票列表...")
+            from src.services.stock_analyzer import get_tushare_token
+            token = get_tushare_token()
+            if not token:
+                print("Tushare Token 未配置")
+                return stocks
 
-            for fs in ["m:1+t:2,m:1+t:23", "m:0+t:6,m:0+t:80"]:
-                page = 1
-                while True:
-                    params = {
-                        'pn': page,
-                        'pz': page_size,
-                        'fs': fs,
-                        'fields': 'f12,f14,f3,f2,f23,f9,f20,f100',
-                        'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-                    }
-                    data = self._request_with_retry(url, params)
-                    if not data:
-                        break
+            ts.set_token(token)
+            pro = ts.pro_api()
 
-                    diff = data.get('data', {}).get('diff')
-                    if not diff:
-                        break
+            # 获取所有A股列表
+            df = pro.stock_basic(
+                exchange='',
+                list_status='L',
+                fields='ts_code,symbol,name,area,industry,market'
+            )
 
-                    items = diff.values() if isinstance(diff, dict) else diff
-                    items_list = list(items)
-
-                    if not items_list:
-                        break
-
-                    for item in items_list:
-                        code = item.get('f12', '')
-                        name = item.get('f14', '')
-                        if code and name and 'ST' not in name and '退' not in name:
-                            stocks.append({
-                                'code': code,
-                                'name': name,
-                                'change_pct': item.get('f3'),
-                                'price': item.get('f2') / 100 if item.get('f2') else None,
-                                'pb': item.get('f23') / 100 if item.get('f23') else None,
-                                'pe': item.get('f9') / 100 if item.get('f9') else None,
-                                'market_cap': item.get('f20') / 100000000 if item.get('f20') else None,
-                                'industry': item.get('f100', '')
-                            })
-
-                    if len(items_list) < page_size:
-                        break
-
-                    page += 1
-                    time.sleep(0.5)
-
-            # 保存到缓存
-            if stocks:
+            if df is not None and len(df) > 0:
+                for _, row in df.iterrows():
+                    code = str(row.get('symbol', ''))
+                    name = str(row.get('name', ''))
+                    # 过滤ST股票和退市股
+                    if code and name and 'ST' not in name and '退' not in name:
+                        stocks.append({
+                            'code': code,
+                            'name': name,
+                            'change_pct': None,  # Tushare stock_basic 不提供实时数据
+                            'price': None,
+                            'pb': None,
+                            'pe': None,
+                            'market_cap': None,
+                            'industry': row.get('industry', '')
+                        })
+                print(f"Tushare 获取成功: {len(stocks)} 只股票")
                 self._save_stock_cache(stocks)
-
+                return stocks
         except Exception as e:
-            print(f"东方财富获取失败: {e}")
+            print(f"Tushare 获取股票列表失败: {e}")
+            import traceback
+            traceback.print_exc()
 
         return stocks
 
     def analyze_stock_pb(self, code: str, years: int = 5) -> Optional[dict]:
-        """分析单只股票的PB历史"""
+        """分析单只股票的PB历史 - 使用 Tushare"""
         try:
             # 确定市场
             if code.startswith('6'):
                 ts_code = f"{code}.SH"
-                secid = f"1.{code}"
             else:
                 ts_code = f"{code}.SZ"
-                secid = f"0.{code}"
 
-            # 获取当前每股净资产
-            url = 'https://push2.eastmoney.com/api/qt/stock/get'
-            params = {
-                'secid': secid,
-                'fields': 'f43,f57,f58,f92,f127',
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-            }
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
-
-            if not data.get('data'):
+            # 初始化 Tushare
+            if not TUSHARE_AVAILABLE:
+                print(f"Tushare 未安装，无法分析 {code}")
                 return None
 
-            info = data['data']
-            bvps = info.get('f92')
-            if not bvps or bvps <= 0:
+            try:
+                from src.services.stock_analyzer import get_tushare_token
+                token = get_tushare_token()
+                if not token:
+                    print("Tushare Token 未配置")
+                    return None
+
+                ts.set_token(token)
+                pro = ts.pro_api()
+            except Exception as e:
+                print(f"Tushare 初始化失败: {e}")
                 return None
 
-            current_price = info.get('f43', 0) / 100 if info.get('f43') else None
-            name = info.get('f58', '')
-            industry = info.get('f127', '')
+            # 获取股票基本信息 - 优先从缓存获取
+            name = ''
+            industry = ''
 
-            # 获取历史K线计算PB
-            days = years * 250
-            kline_url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
-            kline_params = {
-                'secid': secid,
-                'fields1': 'f1,f2,f3,f4,f5',
-                'fields2': 'f51,f52,f53,f54,f55,f56,f57',
-                'klt': '101',
-                'fqt': '0',
-                'end': '20500101',
-                'lmt': str(days),
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-            }
+            # 从共享缓存获取
+            stock_cache = _load_stock_basic_cache()
+            if ts_code in stock_cache:
+                name = stock_cache[ts_code].get('name', '')
+                industry = stock_cache[ts_code].get('industry', '') or ''
+            else:
+                # 缓存中没有，调用API
+                try:
+                    time.sleep(0.5)  # 速率限制
+                    basic_df = pro.stock_basic(ts_code=ts_code, fields='ts_code,name,industry')
+                    if basic_df is None or basic_df.empty:
+                        print(f"未找到股票信息: {ts_code}")
+                        return None
 
-            resp = self.session.get(kline_url, params=kline_params, timeout=30)
-            kline_data = resp.json()
+                    name = basic_df.iloc[0]['name']
+                    industry = basic_df.iloc[0]['industry'] if 'industry' in basic_df.columns else ''
+                except Exception as e:
+                    print(f"获取股票基本信息失败 {ts_code}: {e}")
+                    return None
 
-            pb_values = []
-            if kline_data.get('data', {}).get('klines'):
-                for kline in kline_data['data']['klines']:
-                    try:
-                        parts = kline.split(',')
-                        close = float(parts[2])
-                        pb = close / bvps
-                        if pb > 0:
-                            pb_values.append(pb)
-                    except:
-                        continue
+            # 获取历史 PB 数据
+            end_date = datetime.now().strftime('%Y%m%d')
+            start_date = (datetime.now() - timedelta(days=365 * years)).strftime('%Y%m%d')
 
-            if len(pb_values) < 50:
+            try:
+                time.sleep(0.5)  # 速率限制
+                df = pro.daily_basic(
+                    ts_code=ts_code,
+                    start_date=start_date,
+                    end_date=end_date,
+                    fields='trade_date,close,pb'
+                )
+
+                if df is None or df.empty:
+                    print(f"未找到PB数据: {ts_code}")
+                    return None
+
+                # 过滤有效的 PB 数据
+                df = df[df['pb'].notna() & (df['pb'] > 0)]
+                if len(df) < 50:
+                    print(f"PB数据不足: {ts_code}, 只有 {len(df)} 条")
+                    return None
+
+                pb_values = df['pb'].tolist()
+                current_price = df.iloc[0]['close'] if 'close' in df.columns else None
+                current_pb = df.iloc[0]['pb']
+
+            except Exception as e:
+                print(f"获取PB数据失败 {ts_code}: {e}")
                 return None
 
-            # 计算统计数据 - 与 stock_analyzer.py 保持一致
+            # 计算统计数据
             sorted_pbs = sorted(pb_values)
             n = len(sorted_pbs)
             min_pb = sorted_pbs[0]
             max_pb = sorted_pbs[-1]
             avg_pb = sum(sorted_pbs) / n
             median_pb = sorted_pbs[n // 2]
-            current_pb = current_price / bvps if current_price else sorted_pbs[-1]
 
-            # 计算分位数 - 与 stock_analyzer.py 保持一致
+            # 计算分位数
             percentile_10 = sorted_pbs[int(n * 0.10)]
             percentile_15 = sorted_pbs[int(n * 0.15)]
             percentile_75 = sorted_pbs[int(n * 0.75)]
 
-            # 推荐阈值 - 与 stock_analyzer.py 保持一致
-            recommended_buy_pb = round(percentile_15, 2)   # 请客价: 15%分位 (更严格)
-            recommended_add_pb = round(percentile_10, 2)   # 加仓价: 10%分位
-            recommended_sell_pb = round(percentile_75, 2)  # 退出价: 75%分位
+            # 推荐阈值
+            recommended_buy_pb = round(percentile_15, 2)
+            recommended_add_pb = round(percentile_10, 2)
+            recommended_sell_pb = round(percentile_75, 2)
 
             # 计算距离请客价的百分比
             pb_distance_pct = ((current_pb - recommended_buy_pb) / recommended_buy_pb) * 100
@@ -322,6 +289,8 @@ class BackgroundScanner:
 
         except Exception as e:
             print(f"分析股票 {code} 失败: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
     def start_scan(self, pb_threshold_pct: float = 20.0, scan_interval: int = 120,

@@ -1,10 +1,11 @@
-"""Stock analysis service using Tushare for PB data and EastMoney for stock info."""
-from typing import Optional, Tuple, List
+"""Stock analysis service using Tushare for all data."""
+from typing import Optional, Tuple, List, Dict
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-import requests
 import os
-from .http_utils import HTTPClient
+import time
+import json
+import threading
 
 # Try to import tushare
 try:
@@ -12,6 +13,15 @@ try:
     TUSHARE_AVAILABLE = True
 except ImportError:
     TUSHARE_AVAILABLE = False
+
+# 缓存目录
+CACHE_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'data')
+STOCK_BASIC_CACHE = os.path.join(CACHE_DIR, 'stock_basic_cache.json')
+
+# 全局股票列表缓存
+_stock_basic_cache: Dict[str, dict] = {}
+_stock_basic_cache_time: Optional[datetime] = None
+_cache_lock = threading.Lock()
 
 
 def get_tushare_token() -> Optional[str]:
@@ -63,17 +73,59 @@ class PBAnalysis:
     pb_history: list
 
 
+def _load_stock_basic_cache() -> Dict[str, dict]:
+    """从文件加载股票基本信息缓存"""
+    global _stock_basic_cache, _stock_basic_cache_time
+
+    with _cache_lock:
+        if _stock_basic_cache and _stock_basic_cache_time:
+            # 缓存有效期24小时
+            if (datetime.now() - _stock_basic_cache_time).total_seconds() < 86400:
+                return _stock_basic_cache
+
+        try:
+            if os.path.exists(STOCK_BASIC_CACHE):
+                with open(STOCK_BASIC_CACHE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    cache_time = datetime.fromisoformat(data.get('timestamp', '2000-01-01'))
+                    # 缓存有效期24小时
+                    if (datetime.now() - cache_time).total_seconds() < 86400:
+                        _stock_basic_cache = {s['ts_code']: s for s in data.get('stocks', [])}
+                        _stock_basic_cache_time = cache_time
+                        return _stock_basic_cache
+        except Exception as e:
+            print(f"加载股票缓存失败: {e}")
+
+        return {}
+
+
+def _save_stock_basic_cache(stocks: List[dict]):
+    """保存股票基本信息到缓存文件"""
+    global _stock_basic_cache, _stock_basic_cache_time
+
+    with _cache_lock:
+        try:
+            os.makedirs(CACHE_DIR, exist_ok=True)
+            with open(STOCK_BASIC_CACHE, 'w', encoding='utf-8') as f:
+                json.dump({
+                    'timestamp': datetime.now().isoformat(),
+                    'stocks': stocks
+                }, f, ensure_ascii=False)
+            _stock_basic_cache = {s['ts_code']: s for s in stocks}
+            _stock_basic_cache_time = datetime.now()
+        except Exception as e:
+            print(f"保存股票缓存失败: {e}")
+
+
 class StockAnalyzer:
-    """股票分析器：混合使用东方财富和Tushare"""
+    """股票分析器：使用 Tushare 获取所有数据"""
+
+    # API调用间隔（秒）- 避免触发速率限制
+    API_CALL_INTERVAL = 0.5
+    _last_api_call: Optional[datetime] = None
+    _api_lock = threading.Lock()
 
     def __init__(self, token: Optional[str] = None):
-        # HTTP client with retry and timeout
-        self.http_client = HTTPClient(timeout=30, max_retries=3)
-        self.http_client.session.headers.update({
-            'Referer': 'https://quote.eastmoney.com/'
-        })
-        # 保留兼容性
-        self.session = self.http_client.session
 
         # Tushare API
         self.pro = None
@@ -87,9 +139,45 @@ class StockAnalyzer:
                     ts.set_token(token)
                     self.pro = ts.pro_api()
                 else:
-                    print("未配置 Tushare Token，历史 PB 数据将使用备用方案（东方财富）")
+                    print("未配置 Tushare Token，无法获取数据")
             except Exception as e:
                 print(f"Tushare初始化失败: {e}")
+
+    def _rate_limit(self):
+        """API调用速率限制"""
+        with self._api_lock:
+            if self._last_api_call:
+                elapsed = (datetime.now() - self._last_api_call).total_seconds()
+                if elapsed < self.API_CALL_INTERVAL:
+                    time.sleep(self.API_CALL_INTERVAL - elapsed)
+            StockAnalyzer._last_api_call = datetime.now()
+
+    def _ensure_stock_cache(self) -> Dict[str, dict]:
+        """确保股票基本信息缓存可用"""
+        cache = _load_stock_basic_cache()
+        if cache:
+            return cache
+
+        # 缓存为空，需要重新获取
+        if not self.pro:
+            return {}
+
+        try:
+            self._rate_limit()
+            df = self.pro.stock_basic(
+                exchange='',
+                list_status='L',
+                fields='ts_code,symbol,name,industry,market'
+            )
+
+            if df is not None and not df.empty:
+                stocks = df.to_dict('records')
+                _save_stock_basic_cache(stocks)
+                return {s['ts_code']: s for s in stocks}
+        except Exception as e:
+            print(f"获取股票列表失败: {e}")
+
+        return {}
 
     def parse_code(self, code: str) -> Tuple[str, str, str]:
         """
@@ -144,56 +232,69 @@ class StockAnalyzer:
         return ts_code, "A股", secid
 
     def get_stock_info(self, code: str) -> Optional[StockInfo]:
-        """使用东方财富获取股票基本信息"""
+        """使用 Tushare 获取股票基本信息（优先使用缓存）"""
         ts_code, market, secid = self.parse_code(code)
 
+        # 1. 先从缓存获取
+        cache = self._ensure_stock_cache()
+        if ts_code in cache:
+            stock = cache[ts_code]
+            return StockInfo(
+                code=ts_code,
+                name=stock['name'],
+                industry=stock.get('industry', '') or '',
+                market=market
+            )
+
+        # 2. 缓存中没有，尝试API查询
+        if not self.pro:
+            print("Tushare API 未初始化，无法获取股票信息")
+            return None
+
         try:
-            url = 'https://push2.eastmoney.com/api/qt/stock/get'
-            params = {
-                'secid': secid,
-                'fields': 'f57,f58,f127',
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-            }
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
+            self._rate_limit()
+            df = self.pro.stock_basic(ts_code=ts_code, fields='ts_code,name,industry,market')
 
-            if data.get('data'):
-                info = data['data']
-                name = info.get('f58', '')
-                industry = info.get('f127', '')
-
-                if name:
-                    return StockInfo(
-                        code=ts_code,
-                        name=name,
-                        industry=industry if industry else "",
-                        market=market
-                    )
+            if df is not None and not df.empty:
+                row = df.iloc[0]
+                return StockInfo(
+                    code=ts_code,
+                    name=row['name'],
+                    industry=row['industry'] if 'industry' in row and row['industry'] else "",
+                    market=market
+                )
+            else:
+                print(f"Tushare 未找到股票信息: {ts_code}")
         except Exception as e:
             print(f"获取股票信息失败: {e}")
 
         return None
 
     def fetch_pb_history(self, code: str, years: int = 5) -> List[dict]:
-        """获取历史PB数据 - 优先使用Tushare，备用东方财富"""
+        """获取历史PB数据 - 使用 Tushare"""
         ts_code, market, secid = self.parse_code(code)
         pb_data = []
 
-        # 尝试 Tushare
+        # 只使用 Tushare
         if self.pro and market == "A股":
             pb_data = self._fetch_pb_tushare(ts_code, years)
-
-        # 如果 Tushare 失败，使用东方财富备用方案
-        if not pb_data:
-            pb_data = self._fetch_pb_eastmoney(secid, years)
+            if not pb_data:
+                print(f"Tushare 未找到 {ts_code} 的PB数据")
+        else:
+            print(f"Tushare API 未初始化或股票市场不支持: {market}")
 
         return pb_data
 
     def _fetch_pb_tushare(self, ts_code: str, years: int) -> List[dict]:
-        """使用Tushare获取PB数据"""
+        """使用Tushare获取PB数据
+
+        注意：此接口需要 Tushare 120+ 积分权限
+        详情请参考：https://tushare.pro/document/1?doc_id=108
+        """
         pb_data = []
 
         try:
+            self._rate_limit()
             end_date = datetime.now().strftime('%Y%m%d')
             start_date = (datetime.now() - timedelta(days=365 * years)).strftime('%Y%m%d')
 
@@ -223,80 +324,15 @@ class StockAnalyzer:
                         continue
 
         except Exception as e:
-            print(f"Tushare获取PB失败: {e}")
+            error_msg = str(e)
+            if '权限' in error_msg or 'permission' in error_msg.lower():
+                print(f"Tushare获取PB失败: 需要120+积分权限访问daily_basic接口")
+                print("请前往 https://tushare.pro/document/1?doc_id=108 查看权限说明")
+            else:
+                print(f"Tushare获取PB失败: {e}")
 
         return pb_data
 
-    def _fetch_pb_eastmoney(self, secid: str, years: int) -> List[dict]:
-        """使用东方财富获取PB数据（备用方案）"""
-        pb_data = []
-
-        try:
-            # 获取当前每股净资产
-            url = 'https://push2.eastmoney.com/api/qt/stock/get'
-            params = {
-                'secid': secid,
-                'fields': 'f43,f92',
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-            }
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
-
-            if not data.get('data'):
-                return pb_data
-
-            info = data['data']
-            price_cents = info.get('f43')
-            bvps = info.get('f92')
-
-            if not bvps or bvps <= 0:
-                return pb_data
-
-            # 获取历史K线
-            days = years * 365
-            kline_url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
-            kline_params = {
-                'secid': secid,
-                'fields1': 'f1,f2,f3,f4,f5',
-                'fields2': 'f51,f52,f53,f54,f55,f56,f57',
-                'klt': '101',
-                'fqt': '0',
-                'end': '20500101',
-                'lmt': str(days),
-                'ut': 'fa5fd1943c7b386f172d6893dbfba10b'
-            }
-
-            resp = self.session.get(kline_url, params=kline_params, timeout=30)
-            kline_data = resp.json()
-
-            if kline_data.get('data', {}).get('klines'):
-                klines = kline_data['data']['klines']
-
-                for kline in klines:
-                    try:
-                        parts = kline.split(',')
-                        date_str = parts[0]
-                        close = float(parts[2])
-                        pb = round(close / bvps, 2)
-
-                        if pb > 0:
-                            pb_data.append({
-                                'date': date.fromisoformat(date_str),
-                                'pb': pb,
-                                'price': close,
-                                'book_value_per_share': bvps,
-                                'data_source': 'eastmoney',
-                                'pb_method': 'calculated'  # 通过价格/每股净资产计算
-                            })
-                    except Exception:
-                        continue
-
-                pb_data.sort(key=lambda x: x['date'], reverse=True)
-
-        except Exception as e:
-            print(f"东方财富获取PB失败: {e}")
-
-        return pb_data
 
     def analyze_pb(self, pb_data: List[dict]) -> Optional[PBAnalysis]:
         """分析PB并给出推荐价格"""
@@ -387,7 +423,7 @@ class StockAnalyzer:
 
     def search_stock_by_name(self, keyword: str, limit: int = 10) -> List[StockInfo]:
         """
-        根据股票名称或代码关键词搜索股票
+        根据股票名称或代码关键词搜索股票 - 使用缓存
 
         Args:
             keyword: 搜索关键词（股票名称或代码）
@@ -398,40 +434,28 @@ class StockAnalyzer:
         """
         results = []
 
+        # 从缓存搜索
+        cache = self._ensure_stock_cache()
+        if not cache:
+            print("股票缓存为空，无法搜索")
+            return results
+
         try:
-            # 使用东方财富搜索接口
-            url = 'https://searchapi.eastmoney.com/api/suggest/get'
-            params = {
-                'input': keyword,
-                'type': '14',
-                'token': 'D43BF722C8E33BDC906FB84D85E326E8',
-                'count': str(limit)
-            }
+            keyword_lower = keyword.lower()
+            keyword_upper = keyword.upper()
 
-            resp = self.session.get(url, params=params, timeout=10)
-            data = resp.json()
-
-            if data.get('QuotationCodeTable', {}).get('Data'):
-                for item in data['QuotationCodeTable']['Data']:
-                    code = item.get('Code', '')
-                    name = item.get('Name', '')
-                    market_code = item.get('MktNum', '')
-
-                    # 只处理A股
-                    if market_code in ['0', '1']:
-                        if market_code == '1':
-                            full_code = f"{code}.SH"
-                            market = "A股"
-                        else:
-                            full_code = f"{code}.SZ"
-                            market = "A股"
-
-                        results.append(StockInfo(
-                            code=full_code,
-                            name=name,
-                            industry="",  # 搜索接口不返回行业
-                            market=market
-                        ))
+            for ts_code, stock in cache.items():
+                name = stock.get('name', '')
+                # 名称或代码包含关键词
+                if keyword_lower in name.lower() or keyword_upper in ts_code:
+                    results.append(StockInfo(
+                        code=ts_code,
+                        name=name,
+                        industry=stock.get('industry', '') or '',
+                        market="A股"
+                    ))
+                    if len(results) >= limit:
+                        break
 
         except Exception as e:
             print(f"搜索股票失败: {e}")
